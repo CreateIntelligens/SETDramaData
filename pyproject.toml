@@ -1,0 +1,40 @@
+[tool.poetry]
+name = "breeze-asr"
+version = "0.1.0"
+description = "Speaker diarization and audio segmentation using pyannote"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.9"
+pyannote-audio = "^3.3.2"
+librosa = "^0.10.0"
+soundfile = "^0.12.0"
+numpy = "^1.24.0"
+torch = {version = "^2.0.0", source = "pytorch"}
+torchaudio = {version = "^2.0.0", source = "pytorch"}
+speechbrain = "^0.5.0"
+asteroid-filterbanks = "^0.4.0"
+huggingface-hub = "^0.20.0"
+scipy = "^1.10.0"
+resampy = "^0.4.0"
+pathlib2 = "^2.3.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+black = "^23.0.0"
+isort = "^5.12.0"
+flake8 = "^6.0.0"
+
+[[tool.poetry.source]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu121"
+priority = "supplemental"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+speaker-segment = "pyannote_speaker_segmentation:main"

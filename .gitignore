@@ -1,0 +1,35 @@
+split_dataset/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual Environments
+.env
+.venv
+venv/
+env/
+
+# Test & Coverage reports
+.coverage
+.coverage.*
+.pytest_cache/
+htmlcov/
+
+# Project-specific files
+output/
+segmented_audio/
+.claude/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
