@@ -1,0 +1,64 @@
+# Use official Python runtime as base image
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libsndfile1 \
+    libsndfile1-dev \
+    ffmpeg \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies directly
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+    pyannote.audio>=3.1.0 \
+    librosa>=0.10.0 \
+    soundfile>=0.12.0 \
+    numpy>=1.24.0 \
+    torch>=2.0.0 \
+    torchaudio>=2.0.0 \
+    speechbrain>=0.5.0 \
+    asteroid-filterbanks>=0.4.0 \
+    huggingface-hub>=0.20.0 \
+    scipy>=1.10.0 \
+    resampy>=0.4.0 \
+    tqdm>=4.65.0
+
+# Pre-download pyannote model (requires HF token at build time)
+ARG HUGGINGFACE_TOKEN
+ENV HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+ENV HF_TOKEN=${HUGGINGFACE_TOKEN}
+
+# Download model as root before switching to breeze user
+RUN if [ -n "$HUGGINGFACE_TOKEN" ]; then \
+    python3 -c "from pyannote.audio import Pipeline; Pipeline.from_pretrained('pyannote/speaker-diarization-3.1')" && \
+    echo "✅ Model downloaded successfully"; \
+    else \
+    echo "⚠️  No HUGGINGFACE_TOKEN provided - model will be downloaded at runtime"; \
+    fi
+
+# Set working directory
+WORKDIR /workspace
+
+# Create directories that will be mount points
+RUN mkdir -p /app/project /app/data /app/output
+
+# Create non-root user for security
+RUN useradd -m -u 1000 breeze && \
+    chown -R breeze:breeze /app
+USER breeze
+
+# Set default environment variables
+ENV HUGGINGFACE_TOKEN=""
+ENV HF_TOKEN=""
+
+# Default command - run from mounted project directory
+CMD ["bash", "/app/project/interactive.sh"]

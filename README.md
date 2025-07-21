@@ -1,6 +1,6 @@
 # Breeze ASR - Speaker Diarization and Audio Segmentation
 
-自動說話人分離和音檔切分工具，使用 pyannote 和 pyenv + poetry 環境管理。
+自動說話人分離和音檔切分工具，使用 pyannote 和 Docker 容器化部署。
 
 ## 功能特色
 
@@ -8,80 +8,102 @@
 - ✂️ **智能切分** - 按時間範圍切分音檔（2-15秒）
 - 🔗 **智能合併** - 自動合併同說話人的連續片段
 - 🚫 **過濾功能** - 自動過濾空白和過短片段
-- 📁 **自動命名** - 包含說話人、時間戳的檔名格式
-
-## 環境需求
-
-- Python 3.9+
-- CUDA (可選，用於 GPU 加速)
-- Hugging Face Token (用於 pyannote 模型)
+- 📁 **LibriTTS 格式** - 標準的語音資料集格式
+- 🐳 **Docker 支援** - 容器化部署，環境一致性
+- 📊 **進度顯示** - 實時進度條和處理狀態
 
 ## 快速開始
 
-### 1. 設定環境
+### 方法一：Docker 部署（推薦）
 
 ```bash
-# 安裝依賴
+# 1. 設定環境
+cp .env.example .env
+# 編輯 .env 添加你的 HUGGINGFACE_TOKEN
+
+# 2. 準備資料
+# 將音檔和字幕檔放入 ./data 目錄
+
+# 3. 運行容器
+./docker-run.sh
+
+# 或使用 GPU 加速
+./docker-run.sh gpu
+```
+
+### 方法二：本地安裝
+
+```bash
+# 1. 安裝依賴
 pip install -r requirements.txt
 
-# 設定 HF Token
+# 2. 設定環境變數
 cp .env.example .env
-# 編輯 .env 文件，添加你的 HUGGINGFACE_TOKEN
+# 編輯 .env 添加你的 HUGGINGFACE_TOKEN
 
-# 或使用 poetry
-poetry install
+# 3. 運行互動介面
+./interactive.sh
 ```
 
-### 2. 執行分離
-
-```bash
-# 處理單集
-./breeze.sh episode 1
-
-# 處理所有集
-./breeze.sh all
-
-# 處理範圍
-./breeze.sh all 1 5
-```
-
-## 使用方法
+## Docker 使用方法
 
 ### 基本命令
 
 ```bash
-./breeze.sh <命令> [參數]
+# 互動式運行
+./docker-run.sh
+
+# GPU 加速
+./docker-run.sh gpu
+
+# 使用 Docker Compose
+./docker-run.sh compose
+
+# 只建立映像
+./docker-run.sh build
+
+# 進入容器 Shell
+./docker-run.sh shell
 ```
 
-### 可用命令
-
-| 命令 | 說明 | 範例 |
-|------|------|------|
-| `episode <num>` | 處理單集 | `./breeze.sh episode 1` |
-| `all [start] [end]` | 處理全部或範圍 | `./breeze.sh all 1 5` |
-| `split <method>` | 切分訓練/測試集 | `./breeze.sh split speaker` |
-| `help` | 顯示幫助訊息 | `./breeze.sh help` |
-
-### 切分方法
-
-| 方法 | 說明 | 範例 |
-|------|------|------|
-| `speaker` | 按說話人切分 | `./breeze.sh split speaker` |
-| `files` | 按檔案切分 | `./breeze.sh split files` |
-| `episode <nums>` | 按集數切分 | `./breeze.sh split episode 2 5` |
-
-## 輸出格式
-
-### 檔案命名規則
+### 目錄結構
 
 ```
-{speaker_id}_{chapter_id}_{paragraph_id}_{sentence_id}.wav
-{speaker_id}_{chapter_id}_{paragraph_id}_{sentence_id}.normalized.txt
+breeze_asr/
+├── data/                    # 輸入資料目錄
+│   └── 願望(音軌及字幕檔)/
+├── output/                  # 輸出結果目錄
+├── src/                     # 源代碼
+├── Dockerfile              # Docker 映像配置
+├── docker-compose.yml      # Docker Compose 配置
+├── docker-run.sh           # Docker 運行腳本
+├── interactive.sh          # 互動式介面
+└── .env                    # 環境變數
 ```
 
-範例：`000_001_000001_000001.wav`
+## 使用方法
 
-### 輸出目錄結構
+### 互動式選單
+
+```
+🎤 Breeze ASR - Speaker Diarization Tool
+==========================================
+
+請選擇功能：
+1. 處理集數 (Process Episodes)
+2. 處理並切分 (Process & Split)
+3. 切分訓練/測試集 (Split Dataset)
+4. 查看狀態 (View Status)
+5. 離開 (Exit)
+```
+
+### 支援的輸入格式
+
+- **單集**: `1`
+- **多集**: `1 3 5`
+- **範圍**: `2-6`
+
+### 輸出格式
 
 ```
 output/
@@ -95,67 +117,129 @@ output/
 │       ├── 001_001_000001_000001.wav
 │       ├── 001_001_000001_000001.normalized.txt
 │       └── 001_001.trans.tsv
-└── 010/          # Speaker 10 (第2集)
-    └── 002/      # Chapter 2
-        ├── 010_002_000001_000001.wav
-        ├── 010_002_000001_000001.normalized.txt
-        └── 010_002.trans.tsv
+└── split_dataset/  # 切分後的訓練/測試集
+    ├── train/
+    └── test/
 ```
+
+## 環境需求
+
+### 系統需求
+
+- Docker 20.10+
+- Docker Compose 2.0+
+- 8GB+ RAM
+- 10GB+ 可用空間
+
+### GPU 支援（可選）
+
+- NVIDIA GPU
+- NVIDIA Container Toolkit
+- CUDA 11.8+
+
+### 本地安裝需求
+
+- Python 3.9+
+- CUDA 11.8+（GPU 使用）
+- FFmpeg
+- libsndfile
 
 ## 環境變數
 
-設定 Hugging Face Token：
-
 ```bash
-export HUGGINGFACE_TOKEN="your_token_here"
-# 或
-export HF_TOKEN="your_token_here"
+# .env 文件
+HUGGINGFACE_TOKEN=your_token_here
+HF_TOKEN=your_token_here
+
+# 可選：CUDA 設定
+CUDA_VISIBLE_DEVICES=0
 ```
 
-## 手動使用
+## 性能優化
 
-如果需要手動控制環境：
+### GPU 使用
 
 ```bash
-# 啟動 poetry 環境
-poetry shell
+# 檢查 GPU 狀態
+nvidia-smi
 
-# 直接執行 Python 腳本
-python pyannote_speaker_segmentation.py audio.wav subtitles.txt --help
+# 使用 GPU 運行
+./docker-run.sh gpu
 ```
+
+### 記憶體優化
+
+- 推薦 8GB+ RAM
+- 大音檔建議 16GB+ RAM
+- 可調整 Docker 記憶體限制
 
 ## 故障排除
 
 ### 常見問題
 
-1. **pyenv 未安裝**
+1. **Docker 未運行**
    ```bash
-   # 安裝 pyenv
-   curl https://pyenv.run | bash
+   systemctl start docker
    ```
 
-2. **poetry 未安裝**
+2. **權限問題**
    ```bash
-   # 安裝 poetry
-   curl -sSL https://install.python-poetry.org | python3 -
+   sudo usermod -aG docker $USER
    ```
 
-3. **Hugging Face Token 錯誤**
-   - 前往 https://huggingface.co/settings/tokens 取得 token
-   - 設定環境變數 `HUGGINGFACE_TOKEN`
+3. **GPU 不可用**
+   ```bash
+   # 安裝 NVIDIA Container Toolkit
+   distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+   curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
+   curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+   sudo apt-get update && sudo apt-get install -y nvidia-docker2
+   sudo systemctl restart docker
+   ```
 
-4. **模型下載失敗**
-   - 確認網路連接
-   - 檢查 token 權限
-   - 嘗試不同的模型版本
+4. **記憶體不足**
+   - 減少並行處理數量
+   - 使用較小的音檔進行測試
+   - 增加系統記憶體
 
-## 依賴套件
+5. **模型下載失敗**
+   - 檢查網路連接
+   - 確認 HUGGINGFACE_TOKEN 有效
+   - 使用 VPN（如果需要）
 
-主要依賴：
-- pyannote.audio >= 3.1.0
-- librosa >= 0.10.0
-- soundfile >= 0.12.0
-- numpy >= 1.24.0
-- torch >= 2.0.0
+## 進階使用
 
-完整依賴清單請參考 `pyproject.toml`。
+### 自定義配置
+
+```bash
+# 修改處理參數
+python src/pyannote_speaker_segmentation.py \
+    audio.wav subtitle.txt \
+    --min_duration 1.0 \
+    --max_duration 20.0 \
+    --episode_num 1
+```
+
+### 批次處理
+
+```bash
+# 處理多個集數
+for i in {1..10}; do
+    ./docker-run.sh shell -c "python src/pyannote_speaker_segmentation.py ..."
+done
+```
+
+## 授權
+
+本專案使用 MIT 授權。請參閱 LICENSE 文件。
+
+## 貢獻
+
+歡迎提交 Issue 和 Pull Request。
+
+## 更新日誌
+
+- v0.1.0: 初始版本
+- v0.1.1: 添加 Docker 支援
+- v0.1.2: 改進進度條顯示
+- v0.1.3: 添加狀態管理和一條龍服務
