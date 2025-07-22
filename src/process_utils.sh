@@ -111,11 +111,37 @@ process_single_episode() {
     if [ -f "$audio_file" ]; then
         echo "處理: $(basename "$audio_file")"
         
+        # Add embedding verification options
+        local verification_args=""
+        if [ "${DISABLE_MERGE_VERIFICATION:-false}" = "true" ]; then
+            verification_args="--disable_merge_verification"
+        fi
+        
+        if [ -n "${MERGE_SIMILARITY_THRESHOLD:-}" ]; then
+            verification_args="$verification_args --merge_similarity_threshold $MERGE_SIMILARITY_THRESHOLD"
+        fi
+        
+        if [ -n "${SIMILARITY_THRESHOLD:-}" ]; then
+            verification_args="$verification_args --similarity_threshold $SIMILARITY_THRESHOLD"
+        fi
+        
+        # Add segmentation mode options
+        if [ "${USE_SUBTITLE_DRIVEN:-false}" = "true" ]; then
+            verification_args="$verification_args --use_subtitle_driven"
+            echo "🎯 使用Subtitle-driven模式 (推薦)"
+        elif [ "${USE_STREAMING_SEGMENTATION:-false}" = "true" ]; then
+            verification_args="$verification_args --use_streaming_segmentation"
+            echo "🔄 使用Streaming模式"
+        else
+            echo "🏛️ 使用Traditional模式 (預設)"
+        fi
+        
         python src/pyannote_speaker_segmentation.py \
             "$audio_file" \
             "$subtitle_file" \
             --episode_num "$episode_num" \
-            --output_dir "$output_dir"
+            --output_dir "$output_dir" \
+            $verification_args
         
         if [ $? -eq 0 ]; then
             echo "✅ 完成: $(basename "$audio_file")"
@@ -156,9 +182,14 @@ process_multiple_episodes() {
     local total_episodes=$(echo "$episodes" | wc -l)
     echo "📊 將處理 $total_episodes 個集數: $(echo "$episodes" | tr '\n' ' ')"
     
-    if ! get_confirmation "確定要繼續處理嗎？"; then
-        echo "❌ 已取消"
-        return 1
+    # Skip confirmation for batch processing unless CONFIRM_PROCESSING is set
+    if [ "${CONFIRM_PROCESSING:-false}" = "true" ]; then
+        if ! get_confirmation "確定要繼續處理嗎？"; then
+            echo "❌ 已取消"
+            return 1
+        fi
+    else
+        echo "🚀 開始處理..."
     fi
     
     local success_count=0
@@ -208,9 +239,14 @@ process_all_episodes() {
     local total_episodes=$(echo "$episodes" | wc -l)
     echo "📊 找到 $total_episodes 個集數: $(echo "$episodes" | tr '\n' ' ')"
     
-    if ! get_confirmation "確定要處理所有集數嗎？"; then
-        echo "❌ 已取消"
-        return 1
+    # Skip confirmation for batch processing unless CONFIRM_PROCESSING is set
+    if [ "${CONFIRM_PROCESSING:-false}" = "true" ]; then
+        if ! get_confirmation "確定要處理所有集數嗎？"; then
+            echo "❌ 已取消"
+            return 1
+        fi
+    else
+        echo "🚀 開始處理..."
     fi
     
     local success_count=0
@@ -259,9 +295,14 @@ split_dataset() {
     echo "📁 找到 $processed_count 個處理後的音訊檔案"
     echo "📋 測試集比例: $test_ratio"
     
-    if ! get_confirmation "確定要切分資料集嗎？"; then
-        echo "❌ 已取消"
-        return 1
+    # Skip confirmation for batch processing unless CONFIRM_PROCESSING is set
+    if [ "${CONFIRM_PROCESSING:-false}" = "true" ]; then
+        if ! get_confirmation "確定要切分資料集嗎？"; then
+            echo "❌ 已取消"
+            return 1
+        fi
+    else
+        echo "🚀 開始切分..."
     fi
     
     # Run dataset splitting script
@@ -316,6 +357,7 @@ process_and_split() {
     echo "📋 測試集比例: $test_ratio"
     echo ""
     
+    # Always confirm for the main "process and split" function to avoid accidents
     if ! get_confirmation "確定要開始處理並切分嗎？"; then
         echo "❌ 已取消"
         return 1

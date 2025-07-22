@@ -62,6 +62,11 @@ case "${1:-}" in
             -v "$SCRIPT_DIR:/app/project" \
             -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN:-}" \
             -e HF_TOKEN="${HF_TOKEN:-}" \
+            -e DISABLE_MERGE_VERIFICATION="${DISABLE_MERGE_VERIFICATION:-}" \
+            -e MERGE_SIMILARITY_THRESHOLD="${MERGE_SIMILARITY_THRESHOLD:-}" \
+            -e SIMILARITY_THRESHOLD="${SIMILARITY_THRESHOLD:-}" \
+            -e CONFIRM_PROCESSING="${CONFIRM_PROCESSING:-}" \
+            -e USE_STREAMING_SEGMENTATION="${USE_STREAMING_SEGMENTATION:-}" \
             "$IMAGE_NAME"
         ;;
     
@@ -77,6 +82,11 @@ case "${1:-}" in
             -v "$SCRIPT_DIR:/app/project" \
             -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN:-}" \
             -e HF_TOKEN="${HF_TOKEN:-}" \
+            -e DISABLE_MERGE_VERIFICATION="${DISABLE_MERGE_VERIFICATION:-}" \
+            -e MERGE_SIMILARITY_THRESHOLD="${MERGE_SIMILARITY_THRESHOLD:-}" \
+            -e SIMILARITY_THRESHOLD="${SIMILARITY_THRESHOLD:-}" \
+            -e CONFIRM_PROCESSING="${CONFIRM_PROCESSING:-}" \
+            -e USE_STREAMING_SEGMENTATION="${USE_STREAMING_SEGMENTATION:-}" \
             --workdir /app/project \
             "$IMAGE_NAME" bash
         ;;
@@ -89,6 +99,11 @@ case "${1:-}" in
             -v "$SCRIPT_DIR:/app/project" \
             -e HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN:-}" \
             -e HF_TOKEN="${HF_TOKEN:-}" \
+            -e DISABLE_MERGE_VERIFICATION="${DISABLE_MERGE_VERIFICATION:-}" \
+            -e MERGE_SIMILARITY_THRESHOLD="${MERGE_SIMILARITY_THRESHOLD:-}" \
+            -e SIMILARITY_THRESHOLD="${SIMILARITY_THRESHOLD:-}" \
+            -e CONFIRM_PROCESSING="${CONFIRM_PROCESSING:-}" \
+            -e USE_STREAMING_SEGMENTATION="${USE_STREAMING_SEGMENTATION:-}" \
             "$IMAGE_NAME"
         ;;
     

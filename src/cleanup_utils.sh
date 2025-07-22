@@ -53,16 +53,40 @@ reset_processing_state() {
     echo "🔄 重置處理狀態"
     echo "=============="
     
-    if [ ! -f "processing_state.json" ]; then
-        echo "❌ 處理狀態檔案不存在"
+    local has_json=false
+    local has_db=false
+    
+    if [ -f "processing_state.json" ]; then
+        has_json=true
+    fi
+    
+    if [ -f "speakers.db" ]; then
+        has_db=true
+    fi
+    
+    if [ "$has_json" = false ] && [ "$has_db" = false ]; then
+        echo "❌ 沒有找到任何處理狀態檔案"
         pause_for_input
         return
     fi
     
     echo "📋 當前處理狀態："
     
-    # Create temporary Python script to show detailed status
-    cat > reset_status_temp.py << 'EOF'
+    # Check SQLite database first
+    if [ "$has_db" = true ]; then
+        echo "🗄️ SQLite資料庫狀態:"
+        local python_cmd=$(detect_python)
+        if [ -n "$python_cmd" ]; then
+            $python_cmd "src/speaker_db_manager.py" stats
+        fi
+        echo ""
+    fi
+    
+    # Check legacy JSON if exists
+    if [ "$has_json" = true ]; then
+        echo "📄 舊版JSON狀態 (legacy):"
+        # Create temporary Python script to show detailed status
+        cat > reset_status_temp.py << 'EOF'
 import json
 try:
     with open('processing_state.json', 'r', encoding='utf-8') as f:
@@ -76,40 +100,58 @@ try:
     print(f'總集數: {len(processed)}')
     print(f'最後使用的 Speaker ID: {last_id}')
     
-    if ranges:
-        print('\n集數詳情:')
-        for ep in sorted(processed):
-            ep_str = str(ep)
-            if ep_str in ranges:
-                range_info = ranges[ep_str]
-                start = range_info.get('start', 'N/A')
-                end = range_info.get('end', 'N/A')
-                mapping = range_info.get('mapping', {})
-                speakers = len(mapping)
-                print(f'  集數 {ep}: Speaker ID {start}-{end} ({speakers} 個說話者)')
-            else:
-                print(f'  集數 {ep}: 無詳細資訊')
-    
 except Exception as e:
     print(f'無法讀取狀態檔案: {e}')
 EOF
-    
-    run_python_script reset_status_temp.py
+        
+        run_python_script reset_status_temp.py
+        echo ""
+    fi
     
     echo ""
-    echo "⚠️  這將重置所有處理狀態記錄，但不會刪除已處理的檔案！"
-    echo "💡 如需同時刪除檔案，請選擇「全部清除」"
+    echo "⚠️  這將重置所有處理狀態記錄，包括："
+    if [ "$has_db" = true ]; then
+        echo "  🗄️ SQLite資料庫 (speakers.db)"
+    fi
+    if [ "$has_json" = true ]; then
+        echo "  📄 舊版JSON狀態 (processing_state.json)"
+    fi
+    echo ""
+    echo "💡 處理過的檔案不會被刪除"
     
-    if get_confirmation "確定要繼續嗎？"; then
+    if get_confirmation "確定要重置所有狀態嗎？"; then
         echo ""
         echo "🔄 重置中..."
-        if rm -f "processing_state.json"; then
-            echo "✅ 處理狀態已重置（檔案保留）"
+        
+        local success=true
+        
+        # Remove SQLite database
+        if [ "$has_db" = true ]; then
+            if rm -f "speakers.db"; then
+                echo "✅ SQLite資料庫已重置"
+            else
+                echo "❌ SQLite資料庫重置失敗"
+                success=false
+            fi
+        fi
+        
+        # Remove legacy JSON
+        if [ "$has_json" = true ]; then
+            if rm -f "processing_state.json"; then
+                echo "✅ 舊版JSON狀態已重置"
+            else
+                echo "❌ 舊版JSON狀態重置失敗"
+                success=false
+            fi
+        fi
+        
+        if [ "$success" = true ]; then
+            echo "✅ 所有處理狀態已重置（檔案保留）"
         else
-            echo "❌ 重置失敗"
+            echo "⚠️ 部分重置失敗"
         fi
     else
-        echo "取消操作"
+        echo "❌ 已取消"
     fi
     
     echo ""
@@ -173,8 +215,19 @@ clean_specific_episodes() {
     fi
     
     # Show available episodes with detailed status
+    echo "📋 當前狀態："
+    
+    # Check SQLite database first
+    local python_cmd=$(detect_python)
+    if [ -f "speakers.db" ] && [ -n "$python_cmd" ]; then
+        echo "🗄️ SQLite資料庫:"
+        $python_cmd "src/database_cleanup.py" show
+        echo ""
+    fi
+    
+    # Check legacy JSON if exists
     if [ -f "processing_state.json" ]; then
-        echo "📋 當前狀態："
+        echo "📄 舊版JSON狀態 (legacy):"
         
         # Create temporary Python script
         cat > show_episodes_temp.py << 'EOF'
@@ -353,7 +406,7 @@ EOF
         done
         
         # Update processing state - only for successfully deleted episodes
-        if [ -f "processing_state.json" ] && [ "$success_count" -gt 0 ]; then
+        if [ "$success_count" -gt 0 ]; then
             
             # Create list of successfully deleted episodes
             successfully_deleted=()
@@ -372,11 +425,20 @@ EOF
             done
             
             if [ ${#successfully_deleted[@]} -gt 0 ]; then
-                success_episodes_list=$(printf '%s,' "${successfully_deleted[@]}")
-                success_episodes_list=${success_episodes_list%,}
+                # Update SQLite database
+                if [ -f "speakers.db" ] && [ -n "$python_cmd" ]; then
+                    echo "🗄️ 更新SQLite資料庫狀態..."
+                    $python_cmd "src/database_cleanup.py" remove "${successfully_deleted[@]}"
+                fi
                 
-                # Create temporary Python script
-                cat > update_state_temp.py << EOF
+                # Update legacy JSON if exists
+                if [ -f "processing_state.json" ]; then
+                    success_episodes_list=$(printf '%s,' "${successfully_deleted[@]}")
+                    success_episodes_list=${success_episodes_list%,}
+                    
+                    echo "📄 更新舊版JSON狀態..."
+                    # Create temporary Python script
+                    cat > update_state_temp.py << EOF
 import json
 try:
     with open('processing_state.json', 'r', encoding='utf-8') as f:
@@ -408,12 +470,13 @@ try:
         json.dump(state, f, indent=2, ensure_ascii=False)
     
     if removed_count > 0:
-        print(f'✅ 更新狀態記錄 (移除 {removed_count} 集)')
+        print(f'✅ 更新舊版JSON狀態 (移除 {removed_count} 集)')
 except Exception as e:
-    print(f'❌ 更新狀態失敗: {e}')
+    print(f'❌ 更新舊版JSON狀態失敗: {e}')
 EOF
-                
-                run_python_script update_state_temp.py
+                    
+                    run_python_script update_state_temp.py
+                fi
             fi
         fi
         
@@ -440,7 +503,12 @@ clean_all_data() {
     echo "⚠️  這將刪除所有處理過的資料，包括："
     echo "  📁 輸出檔案 (output/)"
     echo "  📁 切分資料集 (split_dataset/)"
-    echo "  📄 處理狀態 (processing_state.json)"
+    if [ -f "speakers.db" ]; then
+        echo "  🗄️ SQLite資料庫 (speakers.db)"
+    fi
+    if [ -f "processing_state.json" ]; then
+        echo "  📄 舊版JSON狀態 (processing_state.json)"
+    fi
     echo ""
     echo "🚨 這個操作無法復原！"
     
@@ -472,12 +540,22 @@ clean_all_data() {
                 fi
             fi
             
-            # Remove processing state
+            # Remove SQLite database
+            if [ -f "speakers.db" ]; then
+                if rm -f speakers.db; then
+                    echo "✅ 已清除SQLite資料庫"
+                else
+                    echo "❌ 清除SQLite資料庫失敗"
+                    success=false
+                fi
+            fi
+            
+            # Remove legacy JSON
             if [ -f "processing_state.json" ]; then
                 if rm -f processing_state.json; then
-                    echo "✅ 已清除處理狀態"
+                    echo "✅ 已清除舊版JSON狀態"
                 else
-                    echo "❌ 清除處理狀態失敗"
+                    echo "❌ 清除舊版JSON狀態失敗"
                     success=false
                 fi
             fi

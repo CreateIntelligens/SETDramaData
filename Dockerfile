@@ -37,12 +37,12 @@ ARG HUGGINGFACE_TOKEN
 ENV HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
 ENV HF_TOKEN=${HUGGINGFACE_TOKEN}
 
-# Download model as root before switching to breeze user
+# Download models as root before switching to breeze user
 RUN if [ -n "$HUGGINGFACE_TOKEN" ]; then \
-    python3 -c "from pyannote.audio import Pipeline; Pipeline.from_pretrained('pyannote/speaker-diarization-3.1')" && \
-    echo "✅ Model downloaded successfully"; \
+    python3 -c "from pyannote.audio import Pipeline, Model; Pipeline.from_pretrained('pyannote/speaker-diarization-3.1'); Model.from_pretrained('pyannote/embedding')" && \
+    echo "✅ Both diarization and embedding models downloaded successfully"; \
     else \
-    echo "⚠️  No HUGGINGFACE_TOKEN provided - model will be downloaded at runtime"; \
+    echo "⚠️  No HUGGINGFACE_TOKEN provided - models will be downloaded at runtime"; \
     fi
 
 # Set working directory
