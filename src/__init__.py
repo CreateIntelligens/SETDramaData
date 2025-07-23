@@ -1,2 +1,2 @@
-# Breeze ASR - Speaker Diarization and Audio Segmentation
+# SETVoicePrep - Drama Voice Processing for TTS Training
 __version__ = "0.1.0"

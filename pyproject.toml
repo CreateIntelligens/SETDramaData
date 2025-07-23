@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "breeze-asr"
+name = "setvoiceprep"
 version = "0.1.0"
-description = "Speaker diarization and audio segmentation using pyannote"
+description = "SET Drama voice processing toolkit for TTS training data preparation"
 authors = ["Your Name <your.email@example.com>"]
 readme = "README.md"
 package-mode = false

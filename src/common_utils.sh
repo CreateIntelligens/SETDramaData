@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Common utilities for Breeze ASR interactive script
+# Common utilities for SETVoicePrep interactive script
 # Functions shared across different modules
 
 # Function to detect available Python command

@@ -1,5 +1,11 @@
 CLAUDE.md
+GEMINI.md
 processing_state0.json
+poetry.lock
+docs/
+speakers.db
+debug_log.txt
+.python-version
 
 # Python artifacts
 __pycache__/

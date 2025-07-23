@@ -1,30 +1,37 @@
-# Use official Python runtime as base image
-FROM python:3.11-slim
+# Use NVIDIA CUDA base image (確認存在的版本)
+FROM nvidia/cuda:12.0.1-devel-ubuntu22.04
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies
+# Install Python and system dependencies
 RUN apt-get update && apt-get install -y \
+    python3.11 \
+    python3.11-dev \
+    python3-pip \
     build-essential \
     libsndfile1 \
     libsndfile1-dev \
     ffmpeg \
     git \
     curl \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies directly
+# Install Python dependencies directly with CUDA support
 RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+    torch>=2.0.0 \
+    torchaudio>=2.0.0 \
+    --index-url https://download.pytorch.org/whl/cu118 && \
     pip install --no-cache-dir \
     pyannote.audio>=3.1.0 \
     librosa>=0.10.0 \
     soundfile>=0.12.0 \
     numpy>=1.24.0 \
-    torch>=2.0.0 \
-    torchaudio>=2.0.0 \
     speechbrain>=0.5.0 \
     asteroid-filterbanks>=0.4.0 \
     huggingface-hub>=0.20.0 \
@@ -37,7 +44,7 @@ ARG HUGGINGFACE_TOKEN
 ENV HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
 ENV HF_TOKEN=${HUGGINGFACE_TOKEN}
 
-# Download models as root before switching to breeze user
+# Download models as root before switching to louis user
 RUN if [ -n "$HUGGINGFACE_TOKEN" ]; then \
     python3 -c "from pyannote.audio import Pipeline, Model; Pipeline.from_pretrained('pyannote/speaker-diarization-3.1'); Model.from_pretrained('pyannote/embedding')" && \
     echo "✅ Both diarization and embedding models downloaded successfully"; \
@@ -46,15 +53,15 @@ RUN if [ -n "$HUGGINGFACE_TOKEN" ]; then \
     fi
 
 # Set working directory
-WORKDIR /workspace
+WORKDIR /app/project
 
 # Create directories that will be mount points
 RUN mkdir -p /app/project /app/data /app/output
 
 # Create non-root user for security
-RUN useradd -m -u 1000 breeze && \
-    chown -R breeze:breeze /app
-USER breeze
+RUN useradd -m -u 1000 louis && \
+    chown -R louis:louis /app
+USER louis
 
 # Set default environment variables
 ENV HUGGINGFACE_TOKEN=""

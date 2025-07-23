@@ -77,7 +77,10 @@ class SpeakerDatabase:
     
     def _deserialize_embedding(self, data: bytes, dim: int) -> np.ndarray:
         """Convert bytes back to numpy array"""
-        return np.frombuffer(data, dtype=np.float32).reshape(-1, dim) if dim > 1 else np.frombuffer(data, dtype=np.float32)
+        # Always deserialize as 1D array first
+        flat_array = np.frombuffer(data, dtype=np.float32)
+        # For pyannote embeddings, we typically want 1D arrays
+        return flat_array
     
     def add_speaker(self, embedding: np.ndarray, episode_num: int, local_label: str, segment_count: int = 0) -> int:
         """Add a new speaker to the database and return the speaker_id"""
@@ -86,7 +89,8 @@ class SpeakerDatabase:
             
             # Ensure embedding is float32 for consistency
             embedding = embedding.astype(np.float32)
-            embedding_dim = embedding.shape[0] if embedding.ndim == 1 else embedding.size
+            # Store the total size for 1D embeddings (pyannote typically produces 1D)
+            embedding_dim = embedding.size
             
             # Insert new speaker
             cursor.execute("""
@@ -113,8 +117,19 @@ class SpeakerDatabase:
         print(f"   ✨ New speaker registered: Global ID {speaker_id} (Episode {episode_num}, {segment_count} segments)")
         return speaker_id
     
-    def find_similar_speaker(self, embedding: np.ndarray, similarity_threshold: float = 0.85) -> Tuple[Optional[int], float]:
-        """Find the most similar speaker in the database"""
+    def find_similar_speaker(self, embedding: np.ndarray, similarity_threshold: float = 0.30, 
+                           update_embedding: bool = False, update_weight: float = 1.0) -> Tuple[Optional[int], float]:
+        """Find the most similar speaker in the database
+        
+        Args:
+            embedding: Input embedding to match
+            similarity_threshold: Minimum similarity threshold
+            update_embedding: Whether to update matched speaker's embedding
+            update_weight: Weight for the new embedding in update (default: 1.0)
+            
+        Returns:
+            Tuple of (speaker_id, similarity) or (None, max_similarity)
+        """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             
@@ -139,7 +154,12 @@ class SpeakerDatabase:
                 
                 # Compute cosine similarity
                 similarity_tensor = F.cosine_similarity(current_embedding_tensor, stored_tensor)
-                similarity = similarity_tensor.item() if similarity_tensor.numel() == 1 else similarity_tensor[0].item()
+                try:
+                    similarity = float(similarity_tensor.item())
+                except (RuntimeError, ValueError):
+                    # Handle multi-dimensional tensor
+                    similarity_np = similarity_tensor.squeeze().cpu().numpy()
+                    similarity = float(similarity_np.flatten()[0])
                 
                 if similarity > max_similarity:
                     max_similarity = similarity
@@ -147,9 +167,69 @@ class SpeakerDatabase:
             
             if max_similarity > similarity_threshold:
                 print(f"   🔍 Match found! Speaker is likely Global Speaker ID: {best_speaker_id} (Similarity: {max_similarity:.3f})")
+                
+                # Update embedding if requested
+                if update_embedding and best_speaker_id is not None:
+                    self.update_speaker_embedding(best_speaker_id, embedding, update_weight)
+                
                 return best_speaker_id, max_similarity
             
             return None, max_similarity
+    
+    def update_speaker_embedding(self, speaker_id: int, new_embedding: np.ndarray, new_weight: float = 1.0) -> bool:
+        """Update speaker embedding using weighted average
+        
+        Args:
+            speaker_id: Target speaker ID
+            new_embedding: New embedding to merge
+            new_weight: Weight for the new embedding (default: 1.0)
+            
+        Returns:
+            bool: True if update successful, False otherwise
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            
+            # Get current speaker data
+            cursor.execute("""
+                SELECT embedding, embedding_dim, segment_count 
+                FROM speakers WHERE speaker_id = ?
+            """, (speaker_id,))
+            
+            result = cursor.fetchone()
+            if not result:
+                print(f"   ❌ Speaker {speaker_id} not found for embedding update")
+                return False
+                
+            old_embedding_bytes, embedding_dim, segment_count = result
+            old_embedding = self._deserialize_embedding(old_embedding_bytes, embedding_dim)
+            
+            # Calculate weights
+            old_weight = max(1.0, float(segment_count))  # Minimum weight of 1
+            total_weight = old_weight + new_weight
+            
+            # Compute weighted average
+            old_embedding = old_embedding.astype(np.float32)
+            new_embedding = new_embedding.astype(np.float32)
+            
+            updated_embedding = (old_weight * old_embedding + new_weight * new_embedding) / total_weight
+            
+            # Normalize to unit length (important for cosine similarity)
+            updated_embedding = updated_embedding / np.linalg.norm(updated_embedding)
+            
+            # Serialize and update in database
+            updated_embedding_bytes = self._serialize_embedding(updated_embedding)
+            
+            cursor.execute("""
+                UPDATE speakers 
+                SET embedding = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE speaker_id = ?
+            """, (updated_embedding_bytes, speaker_id))
+            
+            conn.commit()
+            
+            print(f"   🔄 Updated embedding for Speaker {speaker_id} (weights: {old_weight:.1f} + {new_weight:.1f})")
+            return True
     
     def update_speaker_episode(self, speaker_id: int, episode_num: int, local_label: str, segment_count: int = 0):
         """Record that a speaker appeared in an episode"""

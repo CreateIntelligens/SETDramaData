@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Cleanup utilities for Breeze ASR interactive script
+# Cleanup utilities for SETVoicePrep interactive script
 # All data cleaning and removal functions
 
 # Source common utilities

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Status utilities for Breeze ASR interactive script
+# Status utilities for SETVoicePrep interactive script
 # Functions for viewing processing status and system information
 
 # Source common utilities

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Breeze ASR - 模型下載工具
+SETVoicePrep - 模型下載工具
 下載pyannote模型到專案內的models目錄，用於離線部署
 
 使用方法:
@@ -8,7 +8,8 @@ Breeze ASR - 模型下載工具
     
 注意:
     1. 需要設定.env檔案中的HUGGINGFACE_TOKEN
-    2. 需要先到 https://huggingface.co/pyannote/embedding 授權存取
+    2. 需要先到以下頁面授權存取：
+       - https://huggingface.co/pyannote/embedding
 """
 
 import os
@@ -17,7 +18,7 @@ from pathlib import Path
 
 def load_env():
     """載入.env檔案"""
-    env_file = Path(__file__).parent / ".env"
+    env_file = Path(__file__).parent.parent / ".env"  # 往上一層到專案根目錄
     if env_file.exists():
         try:
             with open(env_file, 'r', encoding='utf-8') as f:
@@ -53,7 +54,7 @@ def download_to_local():
         return False
     
     # 建立models目錄
-    models_dir = Path(__file__).parent / "models"
+    models_dir = Path(__file__).parent.parent / "models"  # 往上一層到專案根目錄
     models_dir.mkdir(exist_ok=True)
     
     # 建立子目錄
@@ -98,6 +99,7 @@ def download_to_local():
         print(f"❌ Embedding 模型下載失敗: {e}")
         print(f"   請確認已授權存取 https://huggingface.co/pyannote/embedding")
         return False
+    
     
     # 檢查下載結果
     print(f"\n📊 檢查下載結果:")

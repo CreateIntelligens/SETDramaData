@@ -1,23 +1,17 @@
-version: '3.8'
-
 services:
-  breeze-asr:
+  setvoiceprep:
     build: .
-    container_name: breeze-asr
+    container_name: setvoiceprep
     volumes:
       # Mount entire project directory
       - .:/app/project
-    environment:
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN:-}
-      - HF_TOKEN=${HF_TOKEN:-}
     stdin_open: true
     tty: true
-    working_dir: /app/project
-    # Enable GPU support (uncomment if using GPU)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+    # Enable GPU support
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

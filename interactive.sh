@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Breeze ASR - Interactive Menu (Modularized)
+# SETVoicePrep - Interactive Menu (Modularized)
 # 互動式選單介面 (模組化版本)
 
 set -e
@@ -53,7 +53,7 @@ update_env_setting() {
 # Function to show main menu
 show_menu() {
     clear
-    echo "🎤 Breeze ASR - Speaker Diarization Tool"
+    echo "🎤 SETVoicePrep - Drama Voice Processing Tool"
     echo "=========================================="
     echo ""
     echo "請選擇功能："
@@ -169,11 +169,10 @@ show_settings_menu() {
         echo "2. 設定Embedding參數 (Configure Embedding)"
         echo "3. 設定處理模式 (Configure Processing Mode)"
         echo "4. 設定分段模式 (Configure Segmentation Mode)"
-        echo "5. 切換確認模式 (Toggle Confirmation Mode)"
-        echo "6. 重置為預設值 (Reset to Defaults)"
-        echo "7. 返回主選單 (Back to Main Menu)"
+        echo "5. 重置為預設值 (Reset to Defaults)"
+        echo "6. 返回主選單 (Back to Main Menu)"
         echo ""
-        echo -n "請選擇 [1-7]: "
+        echo -n "請選擇 [1-6]: "
         read choice
         
         case "$choice" in
@@ -190,12 +189,9 @@ show_settings_menu() {
                 configure_segmentation_mode
                 ;;
             5)
-                toggle_confirmation_mode
-                ;;
-            6)
                 reset_to_defaults
                 ;;
-            7)
+            6)
                 return
                 ;;
             *)
@@ -423,21 +419,15 @@ show_current_settings() {
     # Processing settings from .env or defaults
     echo ""
     echo "⚙️ 處理設定:"
-    echo "  DISABLE_MERGE_VERIFICATION: ${DISABLE_MERGE_VERIFICATION:-false}"
-    echo "  MERGE_SIMILARITY_THRESHOLD: ${MERGE_SIMILARITY_THRESHOLD:-0.75}"
-    echo "  SIMILARITY_THRESHOLD: ${SIMILARITY_THRESHOLD:-0.85}"
-    echo "  CONFIRM_PROCESSING: ${CONFIRM_PROCESSING:-false}"
-    # Determine segmentation mode
-    if [ "${USE_SUBTITLE_DRIVEN:-false}" = "true" ]; then
-        segmentation_mode="Subtitle-driven模式 (推薦)"
-    elif [ "${USE_STREAMING_SEGMENTATION:-false}" = "true" ]; then
-        segmentation_mode="Streaming模式"
+    echo "  SIMILARITY_THRESHOLD: ${SIMILARITY_THRESHOLD:-0.50}"
+    # Show segmentation mode (only Hybrid mode is supported)
+    if [ "${USE_HYBRID_SEGMENTATION:-false}" = "true" ]; then
+        segmentation_mode="Hybrid模式 (結合Diarization與字幕)"
     else
-        segmentation_mode="Traditional模式"
+        segmentation_mode="未設定 (建議啟用Hybrid模式)"
     fi
     echo "  分段模式: $segmentation_mode"
-    echo "  USE_SUBTITLE_DRIVEN: ${USE_SUBTITLE_DRIVEN:-false}"
-    echo "  USE_STREAMING_SEGMENTATION: ${USE_STREAMING_SEGMENTATION:-false}"
+    echo "  USE_HYBRID_SEGMENTATION: ${USE_HYBRID_SEGMENTATION:-false}"
     
     # Default directories
     echo ""
@@ -462,39 +452,35 @@ show_current_settings() {
 # Configure embedding settings
 configure_embedding_settings() {
     echo ""
-    echo "🎛️ 設定Embedding參數"
-    echo "==================="
+    echo "🎛️ 設定Speaker識別參數"
+    echo "======================"
     
     echo "目前設定:"
-    echo "  合併驗證閾值: ${MERGE_SIMILARITY_THRESHOLD:-0.75}"
-    echo "  跨集識別閾值: ${SIMILARITY_THRESHOLD:-0.85}"
-    echo "  停用合併驗證: ${DISABLE_MERGE_VERIFICATION:-false}"
+    echo "  跨集識別閾值: ${SIMILARITY_THRESHOLD:-0.50}"
+    echo "  語音活動閾值: ${VOICE_ACTIVITY_THRESHOLD:-0.6}"
+    echo "  Embedding更新: ${UPDATE_SPEAKER_EMBEDDINGS:-true}"
     echo ""
     
     echo "設定說明:"
-    echo "• 合併驗證閾值: 控制segment合併的嚴格程度 (0.0-1.0)"
-    echo "  - 較低值 (0.6-0.7): 更嚴格，較少錯誤合併"
-    echo "  - 較高值 (0.8-0.9): 較寬鬆，可能合併更多segment"
-    echo ""
     echo "• 跨集識別閾值: 控制不同集間speaker識別 (0.0-1.0)"
     echo "  - 較低值 (0.7-0.8): 更容易識別為同一speaker"
     echo "  - 較高值 (0.9-0.95): 更嚴格的speaker識別"
     echo ""
     
-    # Merge threshold
-    echo -n "新的合併驗證閾值 [目前: ${MERGE_SIMILARITY_THRESHOLD:-0.75}]: "
-    read new_merge_threshold
-    if [ -n "$new_merge_threshold" ]; then
-        export MERGE_SIMILARITY_THRESHOLD="$new_merge_threshold"
-        update_env_setting "MERGE_SIMILARITY_THRESHOLD" "$new_merge_threshold"
-    fi
-    
     # Speaker threshold  
-    echo -n "新的跨集識別閾值 [目前: ${SIMILARITY_THRESHOLD:-0.85}]: "
+    echo -n "新的跨集識別閾值 [目前: ${SIMILARITY_THRESHOLD:-0.50}]: "
     read new_speaker_threshold
     if [ -n "$new_speaker_threshold" ]; then
         export SIMILARITY_THRESHOLD="$new_speaker_threshold"
         update_env_setting "SIMILARITY_THRESHOLD" "$new_speaker_threshold"
+    fi
+    
+    # Voice activity threshold
+    echo -n "新的語音活動閾值 [目前: ${VOICE_ACTIVITY_THRESHOLD:-0.6}]: "
+    read new_vad_threshold
+    if [ -n "$new_vad_threshold" ]; then
+        export VOICE_ACTIVITY_THRESHOLD="$new_vad_threshold"
+        update_env_setting "VOICE_ACTIVITY_THRESHOLD" "$new_vad_threshold"
     fi
     
     echo ""
@@ -518,19 +504,18 @@ configure_processing_mode() {
     
     case "$mode_choice" in
         1)
-            export DISABLE_MERGE_VERIFICATION="false"
-            export MERGE_SIMILARITY_THRESHOLD="0.75"
-            export SIMILARITY_THRESHOLD="0.85"
+            export SIMILARITY_THRESHOLD="0.50"
+            export VOICE_ACTIVITY_THRESHOLD="0.6"
             echo "✅ 設定為標準模式"
             ;;
         2)
-            export DISABLE_MERGE_VERIFICATION="true"
-            echo "✅ 設定為快速模式"
+            export SIMILARITY_THRESHOLD="0.40"
+            export VOICE_ACTIVITY_THRESHOLD="0.5"
+            echo "✅ 設定為寬鬆模式"
             ;;
         3)
-            export DISABLE_MERGE_VERIFICATION="false"
-            export MERGE_SIMILARITY_THRESHOLD="0.85"
-            export SIMILARITY_THRESHOLD="0.9"
+            export SIMILARITY_THRESHOLD="0.65"
+            export VOICE_ACTIVITY_THRESHOLD="0.7"
             echo "✅ 設定為嚴格模式"
             ;;
         *)
@@ -541,9 +526,8 @@ configure_processing_mode() {
     esac
     
     # Save to .env using update function
-    update_env_setting "DISABLE_MERGE_VERIFICATION" "$DISABLE_MERGE_VERIFICATION"
-    update_env_setting "MERGE_SIMILARITY_THRESHOLD" "$MERGE_SIMILARITY_THRESHOLD"
     update_env_setting "SIMILARITY_THRESHOLD" "$SIMILARITY_THRESHOLD"
+    update_env_setting "VOICE_ACTIVITY_THRESHOLD" "$VOICE_ACTIVITY_THRESHOLD"
     
     echo "💾 設定已儲存到 .env"
     pause_for_input
@@ -555,100 +539,38 @@ configure_segmentation_mode() {
     echo "🔄 設定分段模式"
     echo "==============="
     
-    local current_mode="${USE_STREAMING_SEGMENTATION:-false}"
-    echo "目前模式: $([ "$current_mode" = "true" ] && echo "Streaming模式" || echo "Traditional模式")"
-    echo ""
-    echo "分段模式說明:"
-    echo "• Traditional模式 (預設): 可跳躍合併segments，較複雜但可能合併更多"
-    echo "  - 例: SPEAKER_A[0-2s] 可以與 SPEAKER_A[6-8s] 合併 (如果embedding相似)"
-    echo ""
-    echo "• Streaming模式: 只合併時間連續的segments，簡單直觀"
-    echo "  - 例: SPEAKER_A[0-2s] 只能與 SPEAKER_A[2-4s] 合併 (時間連續)"
-    echo "  - 不會跳躍合併，避免複雜的切了又合併邏輯"
-    echo ""
-    echo "• Subtitle-driven模式 (推薦): 基於字幕時間軸分段，不會遺漏字幕"
-    echo "  - 確保每句字幕都有對應音頻片段"
-    echo "  - 使用embedding智能合併同speaker的連續句子"
-    echo "  - 解決連續語音被錯誤切分的問題"
-    echo ""
-    
-    echo "選擇分段模式:"
-    echo "1. Traditional模式 - 允許跳躍合併 (可能遺漏字幕)"
-    echo "2. Streaming模式 - 只合併連續segments (可能遺漏字幕)"
-    echo "3. Subtitle-driven模式 - 基於字幕分段 (推薦，不會遺漏)"
-    echo ""
-    echo -n "請選擇 [1-3]: "
-    read mode_choice
-    
-    case "$mode_choice" in
-        1)
-            update_env_setting "USE_STREAMING_SEGMENTATION" "false"
-            update_env_setting "USE_SUBTITLE_DRIVEN" "false"
-            export USE_STREAMING_SEGMENTATION="false"
-            export USE_SUBTITLE_DRIVEN="false"
-            echo "✅ 設定為Traditional模式 (允許跳躍合併)"
-            ;;
-        2)
-            update_env_setting "USE_STREAMING_SEGMENTATION" "true"
-            update_env_setting "USE_SUBTITLE_DRIVEN" "false"
-            export USE_STREAMING_SEGMENTATION="true"
-            export USE_SUBTITLE_DRIVEN="false"
-            echo "✅ 設定為Streaming模式 (只合併連續segments)"
-            ;;
-        3)
-            update_env_setting "USE_STREAMING_SEGMENTATION" "false"
-            update_env_setting "USE_SUBTITLE_DRIVEN" "true"
-            export USE_STREAMING_SEGMENTATION="false"
-            export USE_SUBTITLE_DRIVEN="true"
-            echo "✅ 設定為Subtitle-driven模式 (基於字幕分段，推薦)"
-            ;;
-        *)
-            echo "❌ 無效選項"
-            pause_for_input
-            return
-            ;;
-    esac
-    
-    echo "💾 設定已儲存到 .env"
-    pause_for_input
-}
-
-# Toggle confirmation mode
-toggle_confirmation_mode() {
-    echo ""
-    echo "🔄 切換確認模式"
-    echo "==============="
-    
-    local current_mode="${CONFIRM_PROCESSING:-false}"
-    echo "目前模式: $([ "$current_mode" = "true" ] && echo "需要確認" || echo "自動執行")"
+    echo "目前使用: Hybrid模式 (結合Diarization與字幕)"
     echo ""
     echo "模式說明:"
-    echo "• 需要確認模式: 每個步驟都會詢問是否繼續"
-    echo "• 自動執行模式: 減少確認對話，直接執行 (推薦)"
+    echo "• Hybrid模式結合了pyannote diarization的精確說話人識別"
+    echo "  與字幕時間軸的完整內容保障"
+    echo "• 確保不會遺漏任何字幕內容"
+    echo "• 提供最佳的說話人辨識精度"
+    echo "• 已針對中文語音進行優化"
     echo ""
     
-    if [ "$current_mode" = "true" ]; then
-        echo "切換為自動執行模式？"
-        if get_confirmation "確定要切換嗎？"; then
-            update_env_setting "CONFIRM_PROCESSING" "false"
-            export CONFIRM_PROCESSING="false"
-            echo "✅ 已切換為自動執行模式"
-        else
-            echo "❌ 已取消"
-        fi
+    if [ "${USE_HYBRID_SEGMENTATION:-false}" = "true" ]; then
+        echo "✅ Hybrid模式已啟用"
     else
-        echo "切換為需要確認模式？"
-        if get_confirmation "確定要切換嗎？"; then
-            update_env_setting "CONFIRM_PROCESSING" "true"
-            export CONFIRM_PROCESSING="true"
-            echo "✅ 已切換為需要確認模式"
+        echo "🔧 啟用Hybrid模式？"
+        if get_confirmation "確定要設定為Hybrid模式嗎？"; then
+            # Set hybrid mode and disable others
+            update_env_setting "USE_STREAMING_SEGMENTATION" "false"
+            update_env_setting "USE_SUBTITLE_DRIVEN" "false"
+            update_env_setting "USE_HYBRID_SEGMENTATION" "true"
+            export USE_STREAMING_SEGMENTATION="false"
+            export USE_SUBTITLE_DRIVEN="false"
+            export USE_HYBRID_SEGMENTATION="true"
+            echo "✅ 已設定為Hybrid模式"
         else
             echo "❌ 已取消"
         fi
     fi
     
+    echo "💾 設定已儲存到 .env"
     pause_for_input
 }
+
 
 # Reset to defaults
 reset_to_defaults() {
@@ -665,20 +587,18 @@ reset_to_defaults() {
     # Remove custom settings from .env
     if [ -f ".env" ]; then
         cp .env .env.backup
-        grep -v "^DISABLE_MERGE_VERIFICATION\|^MERGE_SIMILARITY_THRESHOLD\|^SIMILARITY_THRESHOLD" .env > .env.tmp
+        grep -v "^SIMILARITY_THRESHOLD\|^VOICE_ACTIVITY_THRESHOLD" .env > .env.tmp
         mv .env.tmp .env
         echo "💾 已備份原設定到 .env.backup"
     fi
     
     # Reset environment variables
-    unset DISABLE_MERGE_VERIFICATION
-    unset MERGE_SIMILARITY_THRESHOLD
     unset SIMILARITY_THRESHOLD
+    unset VOICE_ACTIVITY_THRESHOLD
     
     echo "✅ 已重置為預設值"
-    echo "   合併驗證: 啟用"
-    echo "   合併閾值: 0.75"
-    echo "   識別閾值: 0.85"
+    echo "   識別閾值: 0.50"
+    echo "   語音活動閾值: 0.6"
     
     pause_for_input
 }
