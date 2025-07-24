@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "setvoiceprep"
+name = "etl"
 version = "0.1.0"
 description = "SET Drama voice processing toolkit for TTS training data preparation"
 authors = ["Your Name <your.email@example.com>"]
@@ -14,7 +14,7 @@ soundfile = "^0.12.0"
 numpy = "^1.24.0"
 torch = {version = "^2.0.0", source = "pytorch"}
 torchaudio = {version = "^2.0.0", source = "pytorch"}
-speechbrain = "^0.5.0"
+speechbrain = ">=1.0.0"
 asteroid-filterbanks = "^0.4.0"
 huggingface-hub = "^0.20.0"
 scipy = "^1.10.0"

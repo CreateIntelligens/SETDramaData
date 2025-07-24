@@ -6,6 +6,8 @@ docs/
 speakers.db
 debug_log.txt
 .python-version
+願望(音軌及字幕檔)
+models0/
 
 # Python artifacts
 __pycache__/

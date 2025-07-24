@@ -1,38 +1,83 @@
 #!/usr/bin/env python3
 """
 Pyannote Speaker Segmentation with Global Speaker Database
-支援兩種分段模式：
-1. speaker_level (預設)：說話人級別分段，提供更穩定的跨集識別
-2. hybrid：混合分段模式，保持向後相容性
+說話人級別分段系統：
+- 合併同說話人片段，提取穩定的聲紋特徵
+- 提供準確的跨集說話人識別
 """
 
 import os
 import sys
 import argparse
 
-# 設定 MKL 環境變數避免 Docker 環境中的 primitive 錯誤
-os.environ['MKL_SERVICE_FORCE_INTEL'] = '1'
-os.environ['MKL_THREADING_LAYER'] = 'GNU'
-os.environ['OMP_NUM_THREADS'] = '1'
-os.environ['MKL_NUM_THREADS'] = '1'
+# 自動檢測系統配置並應用最佳設定
+# 加載檢測模組前，先設定基本環境變數
+os.environ.update({
+    'MKL_SERVICE_FORCE_INTEL': '1',
+    'MKL_THREADING_LAYER': 'GNU',
+    'OMP_NUM_THREADS': '1',
+    'MKL_NUM_THREADS': '1',
+    'MKL_DEBUG_CPU_TYPE': '5',
+    'KMP_DUPLICATE_LIB_OK': 'TRUE',
+    'KMP_WARNINGS': 'FALSE',
+    'TORCH_WARN': '0',
+    'PYTORCH_DISABLE_WARNINGS': '1'
+})
 
 import torch
 import numpy as np
 from pathlib import Path
+
+# 設定本地模型路徑（支援離線模式）
+script_dir = Path(__file__).parent.parent
+models_dir = script_dir / "models"
+if models_dir.exists():
+    os.environ.update({
+        'HF_HOME': str(models_dir / "huggingface"),
+        'TORCH_HOME': str(models_dir / "torch"),
+        'HF_HUB_CACHE': str(models_dir / "huggingface" / "hub"),
+        'TRANSFORMERS_OFFLINE': '1',
+        'HF_DATASETS_OFFLINE': '1'
+    })
+    print(f"🔧 使用本地模型: {models_dir}")
 from typing import List, Tuple, Dict
 import librosa
 import soundfile as sf
 from tqdm import tqdm
+import warnings
+
+# 靜音各種煩人的警告
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", message=".*NNPACK.*")
+warnings.filterwarnings("ignore", message=".*Could not initialize NNPACK.*")
+warnings.filterwarnings("ignore", message=".*TensorFloat-32.*")
+
+# 設定 logging 等級避免 C++ 層面的警告
+import logging
+logging.getLogger("torch").setLevel(logging.ERROR)
 
 # 設定 PyTorch 線程數以避免 MKL 衝突
 torch.set_num_threads(1)
 torch.set_num_interop_threads(1)
 
+# 簡化配置（參考能用的專案）
+# 禁用問題後端
+if hasattr(torch.backends, 'mkldnn'):
+    torch.backends.mkldnn.enabled = False
+if hasattr(torch.backends, 'mkl'):
+    torch.backends.mkl.enabled = False
+
+# 檢查 GPU 可用性
+if torch.cuda.is_available():
+    print(f"✅ GPU 可用: {torch.cuda.get_device_name(0)}")
+    torch.cuda.empty_cache()
+else:
+    print("⚠️  GPU 不可用，使用 CPU")
+
 # 添加 src 目錄到 Python 路徑
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from speaker_database import SpeakerDatabase
-from hybrid_segmentation import segment_by_hybrid_approach
 from speaker_level_segmentation import segment_by_speaker_level_approach
 
 # Pyannote imports
@@ -59,8 +104,39 @@ class EmbeddingInference:
         """Load the embedding model"""
         try:
             from pyannote.audio import Model
-            model_path = "pyannote/embedding"
-            print(f"   Loading embedding model: {model_path}")
+            
+            # 嘗試使用本地模型路徑 - 更智能的路徑檢測
+            current_dir = Path.cwd()
+            
+            # 檢測專案根目錄
+            if current_dir.name == 'src':
+                project_root = current_dir.parent
+            elif (current_dir / 'src').exists():
+                project_root = current_dir
+            else:
+                project_root = Path(__file__).parent.parent
+                
+            # 優先使用直接下載的模型，再試快取版本  
+            local_emb_path = project_root / "models" / "direct" / "embedding"
+            if not local_emb_path.exists():
+                local_emb_path = project_root / "models" / "huggingface" / "models--pyannote--embedding"
+            
+            print(f"   📁 檢查 embedding 模型路徑: {local_emb_path}")
+            print(f"   📁 路徑存在: {local_emb_path.exists()}")
+            
+            if local_emb_path.exists():
+                # 檢查是否有配置檔案
+                config_file = local_emb_path / "config.yaml"
+                if config_file.exists():
+                    model_path = str(config_file)
+                    print(f"   🔧 使用本地 embedding 模型: {local_emb_path}")
+                else:
+                    model_path = "pyannote/embedding"
+                    print(f"   ❌ 找不到 config.yaml，改用線上 embedding 模型")
+            else:
+                model_path = "pyannote/embedding"
+                print(f"   🌐 使用線上 embedding 模型: {model_path}")
+                
             self.model = Model.from_pretrained(model_path).to(self.device)
             self.model.eval()
             print("   ✅ Embedding model loaded successfully")
@@ -144,6 +220,10 @@ def perform_speaker_diarization(audio_file: str, pipeline: Pipeline, device: tor
     print(f"   Processing audio file: {audio_file}")
     
     try:
+        # 清理GPU記憶體
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            
         # 執行 diarization
         with ProgressHook() as hook:
             diarization = pipeline(audio_file, hook=hook)
@@ -251,8 +331,7 @@ def main():
     parser.add_argument("--max_duration", type=float, default=15.0, help="Maximum segment duration (seconds)")
     parser.add_argument("--similarity_threshold", type=float, default=0.40, help="Cosine similarity threshold for matching speakers")
     parser.add_argument("--voice_activity_threshold", type=float, default=0.1, help="Voice activity threshold for hybrid segmentation (0.0-1.0)")
-    parser.add_argument("--segmentation_mode", choices=["hybrid", "speaker_level"], default="speaker_level", help="Segmentation mode: hybrid (old) or speaker_level (new, recommended)")
-    parser.add_argument("--min_speaker_duration", type=float, default=5.0, help="Minimum total duration for a speaker to be considered (speaker_level mode)")
+    parser.add_argument("--min_speaker_duration", type=float, default=5.0, help="Minimum total duration for a speaker to be considered (seconds)")
     parser.add_argument("--force", action="store_true", help="Force reprocessing even if episode already processed")
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cuda" if torch.cuda.is_available() else "cpu", help="Device to use")
     
@@ -293,11 +372,52 @@ def main():
     
     # Diarization pipeline
     try:
-        diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1")
+        # 嘗試使用本地模型路徑 - 更智能的路徑檢測
+        current_dir = Path.cwd()
+        
+        # 檢測專案根目錄
+        if current_dir.name == 'src':
+            project_root = current_dir.parent
+        elif (current_dir / 'src').exists():
+            project_root = current_dir
+        else:
+            project_root = Path(__file__).parent.parent
+            
+        # 優先使用直接下載的模型，再試快取版本
+        local_diar_path = project_root / "models" / "direct" / "speaker-diarization-3.1"
+        if not local_diar_path.exists():
+            local_diar_path = project_root / "models" / "huggingface" / "models--pyannote--speaker-diarization-3.1"
+        
+        print(f"   📁 檢查專案根目錄: {project_root}")
+        print(f"   📁 檢查模型路徑: {local_diar_path}")
+        print(f"   📁 路徑存在: {local_diar_path.exists()}")
+        
+        if local_diar_path.exists():
+            print(f"   🔧 使用本地 diarization 模型: {local_diar_path}")
+            
+            # 🔥 完全使用本地路徑，不使用 repo ID
+            config_file = local_diar_path / "config.yaml"
+            if config_file.exists():
+                try:
+                    # 直接從本地配置檔案載入
+                    diarization_pipeline = Pipeline.from_pretrained(str(config_file))
+                    print("   ✅ 從本地配置檔案載入成功")
+                except Exception as e:
+                    print(f"   ❌ 本地配置載入失敗: {e}")
+                    print("   💡 可能需要修改 config.yaml 中的模型路徑引用")
+                    raise
+            else:
+                raise Exception(f"找不到配置檔案: {config_file}")
+                
+        else:
+            print("   🌐 使用線上 diarization 模型")
+            diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1")
+            
         diarization_pipeline = diarization_pipeline.to(device)
         print("   ✅ Diarization pipeline loaded")
     except Exception as e:
         print(f"   ❌ Error loading diarization pipeline: {e}")
+        print(f"   📁 檢查路徑: {script_dir / 'models'}")
         sys.exit(1)
     
     # Embedding model
@@ -312,23 +432,14 @@ def main():
     print("4. Performing speaker diarization...")
     diarization = perform_speaker_diarization(args.audio_file, diarization_pipeline, device)
     
-    # 選擇分段模式
-    if args.segmentation_mode == "speaker_level":
-        print("   🎯 使用說話人級別分段模式 (推薦)")
-        segments, local_to_global_map = segment_by_speaker_level_approach(
-            diarization, subtitles, args.audio_file, embedding_inference.model, device,
-            db, args.episode_num, args.min_duration, args.max_duration, args.similarity_threshold,
-            args.min_speaker_duration
-        )
-        print(f"   ✅ 創建了 {len(segments)} 個說話人級別分段")
-    else:  # hybrid mode
-        print("   🔄 使用混合分段模式 (舊版)")
-        segments, local_to_global_map = segment_by_hybrid_approach(
-            diarization, subtitles, args.audio_file, embedding_inference.model, device,
-            db, args.episode_num, args.min_duration, args.max_duration, args.similarity_threshold,
-            args.voice_activity_threshold
-        )
-        print(f"   ✅ 創建了 {len(segments)} 個混合分段")
+    # 執行說話人級別分段
+    print("   🎯 使用說話人級別分段模式")
+    segments, local_to_global_map = segment_by_speaker_level_approach(
+        diarization, subtitles, args.audio_file, embedding_inference.model, device,
+        db, args.episode_num, args.min_duration, args.max_duration, args.similarity_threshold,
+        args.min_speaker_duration
+    )
+    print(f"   ✅ 創建了 {len(segments)} 個說話人級別分段")
     
     if not segments:
         print("❌ No valid segments created")
@@ -345,10 +456,10 @@ def main():
     print("📊 Processing Summary")
     print("="*60)
     print(f"Episode: {args.episode_num}")
-    print(f"Segmentation Mode: {args.segmentation_mode}")
     print(f"Total Segments: {len(segments)}")
     print(f"Unique Speakers: {len(set(seg[2] for seg in segments))}")
     print(f"Similarity Threshold: {args.similarity_threshold}")
+    print(f"Min Speaker Duration: {args.min_speaker_duration}s")
     
     if local_to_global_map:
         print(f"\nSpeaker Mapping:")

@@ -1,0 +1,134 @@
+FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+
+ARG VENV_NAME="cosyvoice"
+ENV VENV=$VENV_NAME
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+
+ENV DEBIAN_FRONTEN=noninteractive
+ENV PYTHONUNBUFFERED=1
+SHELL ["/bin/bash", "--login", "-c"]
+
+RUN apt-get update -y --fix-missing
+RUN apt-get install -y \
+    git build-essential curl wget ffmpeg unzip git git-lfs sox libsox-dev \
+    tmux nano vim htop tree \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && git lfs install
+
+# ==================================================================
+# conda install and conda forge channel as default
+# ------------------------------------------------------------------
+# Install miniforge
+RUN wget --quiet https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O ~/miniforge.sh && \
+    /bin/bash ~/miniforge.sh -b -p /opt/conda && \
+    rm ~/miniforge.sh && \
+    ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
+    echo "source /opt/conda/etc/profile.d/conda.sh" >> /opt/nvidia/entrypoint.d/100.conda.sh && \
+    echo "source /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc && \
+    echo "conda activate ${VENV}" >> /opt/nvidia/entrypoint.d/110.conda_default_env.sh && \
+    echo "conda activate ${VENV}" >> $HOME/.bashrc
+
+ENV PATH /opt/conda/bin:$PATH
+
+RUN conda config --add channels conda-forge && \
+    conda config --set channel_priority strict
+# ------------------------------------------------------------------
+# ~conda
+# ==================================================================
+
+RUN conda create -y -n ${VENV} python=3.10
+ENV CONDA_DEFAULT_ENV=${VENV}
+ENV PATH /opt/conda/bin:/opt/conda/envs/${VENV}/bin:$PATH
+
+WORKDIR /workspace
+
+# PYTHONPATH will be updated later to include etl
+
+# Install CosyVoice dependencies (without source code)
+RUN conda activate ${VENV} && conda install -y -c conda-forge pynini==2.1.5
+
+# Install core PyTorch
+RUN conda activate ${VENV} && \
+    pip install --retries 3 --timeout 300 torch==2.3.1 torchaudio==2.3.1 \
+    -i https://pypi.org/simple/
+
+# Install CosyVoice requirements manually (key packages)
+RUN conda activate ${VENV} && \
+    pip install --retries 3 --timeout 300 \
+    transformers==4.40.1 lightning==2.2.4 librosa==0.10.2 \
+    diffusers==0.29.0 fastapi==0.115.6 gradio==5.4.0 \
+    soundfile==0.12.1 matplotlib==3.7.5 omegaconf==2.3.0 \
+    -i https://pypi.org/simple/
+
+# ==================================================================
+# Add etl dependencies
+# ------------------------------------------------------------------
+# Install additional packages needed for etl (compatible versions)
+RUN conda activate ${VENV} && \
+    pip install --retries 3 --timeout 300 \
+    -i https://pypi.org/simple/ \
+    pyannote.audio \
+    speechbrain \
+    asteroid-filterbanks \
+    resampy \
+    huggingface-hub
+
+# Create directory for etl project (will be mounted)
+RUN mkdir -p /workspace/etl
+
+# Update PYTHONPATH to include etl
+ENV PYTHONPATH="${PYTHONPATH}:/workspace/etl:/workspace/etl/src"
+
+# Set environment variables for MKL optimization (from etl)
+ENV MKL_SERVICE_FORCE_INTEL=1
+ENV MKL_THREADING_LAYER=GNU
+ENV OMP_NUM_THREADS=1
+ENV MKL_NUM_THREADS=1
+ENV MKL_DEBUG_CPU_TYPE=5
+ENV KMP_DUPLICATE_LIB_OK=TRUE
+ENV KMP_WARNINGS=FALSE
+ENV TORCH_WARN=0
+ENV PYTORCH_DISABLE_WARNINGS=1
+
+# Create activation script for easier use (as root before switching user)
+RUN echo '#!/bin/bash' > /usr/local/bin/activate-env && \
+    echo 'source /opt/conda/etc/profile.d/conda.sh' >> /usr/local/bin/activate-env && \
+    echo 'conda activate cosyvoice' >> /usr/local/bin/activate-env && \
+    echo 'if [ $# -eq 0 ]; then' >> /usr/local/bin/activate-env && \
+    echo '    exec sleep infinity' >> /usr/local/bin/activate-env && \
+    echo 'else' >> /usr/local/bin/activate-env && \
+    echo '    exec "$@"' >> /usr/local/bin/activate-env && \
+    echo 'fi' >> /usr/local/bin/activate-env && \
+    chmod +x /usr/local/bin/activate-env
+
+# Create non-root user for security
+RUN useradd -m -u 1000 louis && \
+    chown -R louis:louis /workspace
+USER louis
+
+# Set default working directory to CosyVoice (keeping original behavior)
+WORKDIR /workspace/CosyVoice
+
+# Make conda environment default in all shells
+RUN echo 'source /opt/conda/etc/profile.d/conda.sh' >> /home/louis/.bashrc && \
+    echo 'conda activate cosyvoice' >> /home/louis/.bashrc
+
+# Basic tmux and vim configuration for better UX
+RUN echo '# Basic tmux config' > /home/louis/.tmux.conf && \
+    echo 'set -g mouse on' >> /home/louis/.tmux.conf && \
+    echo 'set -g history-limit 10000' >> /home/louis/.tmux.conf && \
+    echo 'set -g default-terminal "screen-256color"' >> /home/louis/.tmux.conf && \
+    chown louis:louis /home/louis/.tmux.conf
+
+RUN echo '" Basic vim config' > /home/louis/.vimrc && \
+    echo 'syntax on' >> /home/louis/.vimrc && \
+    echo 'set number' >> /home/louis/.vimrc && \
+    echo 'set autoindent' >> /home/louis/.vimrc && \
+    echo 'set tabstop=4' >> /home/louis/.vimrc && \
+    echo 'set shiftwidth=4' >> /home/louis/.vimrc && \
+    echo 'set expandtab' >> /home/louis/.vimrc && \
+    chown louis:louis /home/louis/.vimrc
+
+# Keep container running
+CMD ["sleep", "infinity"]

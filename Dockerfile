@@ -1,13 +1,16 @@
-# Use NVIDIA CUDA base image (確認存在的版本)
-FROM nvidia/cuda:12.0.1-devel-ubuntu22.04
+# Use NVIDIA CUDA base image (參考能用的專案)
+FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
 
-# Set environment variables
+# Set environment variables (參考成功專案)
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+SHELL ["/bin/bash", "--login", "-c"]
 
-# Install Python and system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies (參考成功專案的依賴)
+RUN apt-get update -y --fix-missing && \
+    apt-get install -y \
     python3.11 \
     python3.11-dev \
     python3-pip \
@@ -16,17 +19,24 @@ RUN apt-get update && apt-get install -y \
     libsndfile1-dev \
     ffmpeg \
     git \
+    git-lfs \
     curl \
+    wget \
+    unzip \
+    sox \
+    libsox-dev \
     && ln -sf /usr/bin/python3.11 /usr/bin/python \
     && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && git lfs install
 
-# Install Python dependencies directly with CUDA support
+# Install Python dependencies with CUDA 12.4 support
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir \
     torch>=2.0.0 \
     torchaudio>=2.0.0 \
-    --index-url https://download.pytorch.org/whl/cu118 && \
+    --index-url https://download.pytorch.org/whl/cu124 && \
     pip install --no-cache-dir \
     pyannote.audio>=3.1.0 \
     librosa>=0.10.0 \
@@ -53,10 +63,10 @@ RUN if [ -n "$HUGGINGFACE_TOKEN" ]; then \
     fi
 
 # Set working directory
-WORKDIR /app/project
+WORKDIR /app
 
 # Create directories that will be mount points
-RUN mkdir -p /app/project /app/data /app/output
+RUN mkdir -p /app
 
 # Create non-root user for security
 RUN useradd -m -u 1000 louis && \
@@ -68,4 +78,4 @@ ENV HUGGINGFACE_TOKEN=""
 ENV HF_TOKEN=""
 
 # Default command - run from mounted project directory
-CMD ["bash", "/app/project/interactive.sh"]
+CMD ["bash", "/app/etl.sh"]

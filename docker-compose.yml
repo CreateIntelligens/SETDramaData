@@ -1,10 +1,10 @@
 services:
-  setvoiceprep:
+  etl:
     build: .
-    container_name: setvoiceprep
+    container_name: etl
     volumes:
       # Mount entire project directory
-      - .:/app/project
+      - .:/app
     stdin_open: true
     tty: true
     # Enable GPU support

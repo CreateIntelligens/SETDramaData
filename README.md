@@ -1,4 +1,4 @@
-# SETVoicePrep - Drama Voice Processing Toolkit
+# etl - Drama Voice Processing Toolkit
 
 SET Drama 聲音處理工具，為 TTS 訓練資料做說話人識別與分段處理。
 
@@ -9,10 +9,10 @@ SET Drama 聲音處理工具，為 TTS 訓練資料做說話人識別與分段�
 ```bash
 # 構建並運行
 docker compose build
-docker compose run --rm setvoiceprep bash interactive.sh
+docker compose run --rm etl bash interactive.sh
 
 # 測試 GPU
-docker compose run --rm setvoiceprep python test_gpu.py
+docker compose run --rm etl python test_gpu.py
 ```
 
 ### 本地安裝

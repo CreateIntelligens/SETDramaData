@@ -1,0 +1,23 @@
+services:
+  cosyvoice-setvoice:
+    build:
+      context: .
+      dockerfile: Dockerfile.merged
+    container_name: cosyvoice-setvoice
+    entrypoint: ["/usr/local/bin/activate-env"]
+    volumes:
+      # Mount etl project
+      - .:/workspace/etl
+      # Mount data directories
+      - ./data:/workspace/data
+      - ./output:/workspace/output
+    stdin_open: true
+    tty: true
+    # Enable GPU support
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
