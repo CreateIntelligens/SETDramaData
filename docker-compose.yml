@@ -3,14 +3,25 @@ services:
     build: .
     container_name: etl
     volumes:
-      # Mount entire project directory
-      - .:/app
+      - .:/workspace/etl
     stdin_open: true
     tty: true
-    # Enable GPU support
+    # 🚨 增加記憶體限制和 swap 設定
+    shm_size: 6g
+    mem_limit: 20g
+    mem_swappiness: 60
+    mem_reservation: 12g
+    ulimits:
+      memlock: -1
+      stack: 8388608
+      nofile: 65536
+    # GPU 支援
     deploy:
       resources:
+        limits:
+          memory: 16g
         reservations:
+          memory: 8g
           devices:
             - driver: nvidia
               count: 1

@@ -111,7 +111,7 @@ download_models_to_project() {
     echo "📥 開始下載模型..."
     echo ""
     
-    $python_cmd "src/download_models_local.py"
+    $python_cmd "src/download_models_offline.py"
     
     if [ $? -eq 0 ]; then
         echo ""
@@ -205,58 +205,11 @@ test_model_loading() {
     echo "🔧 測試模型載入中..."
     echo ""
     
-    # Create a simple test script
-    cat > /tmp/test_models.py << 'EOF'
-import sys
-import os
-from pathlib import Path
-
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
-try:
-    print("🤖 測試 PyTorch...")
-    import torch
-    print(f"   ✅ PyTorch {torch.__version__}")
-    print(f"   🖥️ Device: {'GPU' if torch.cuda.is_available() else 'CPU'}")
+    # Use the existing test_offline.py which works correctly
+    echo "🔧 使用專用的離線測試腳本..."
+    echo ""
     
-    print("\n📡 測試 pyannote.audio...")
-    from pyannote.audio import Pipeline, Model
-    print("   ✅ pyannote.audio 匯入成功")
-    
-    # Check local models
-    models_dir = project_root / "models"
-    if models_dir.exists():
-        print(f"\n📁 檢測到本地模型: {models_dir}")
-        os.environ['HF_HOME'] = str(models_dir / "huggingface")
-        os.environ['TORCH_HOME'] = str(models_dir / "torch")
-        print("   🔧 設定使用本地模型")
-    
-    print("\n🎤 測試 Diarization 模型載入...")
-    try:
-        pipeline = Pipeline.from_pretrained('pyannote/speaker-diarization-3.1')
-        print("   ✅ Diarization 模型載入成功")
-    except Exception as e:
-        print(f"   ❌ Diarization 模型載入失敗: {e}")
-        sys.exit(1)
-    
-    print("\n🔊 測試 Embedding 模型載入...")
-    try:
-        model = Model.from_pretrained('pyannote/embedding')
-        print("   ✅ Embedding 模型載入成功")
-    except Exception as e:
-        print(f"   ❌ Embedding 模型載入失敗: {e}")
-        sys.exit(1)
-    
-    print("\n🎉 所有模型測試通過!")
-    
-except Exception as e:
-    print(f"❌ 測試失敗: {e}")
-    sys.exit(1)
-EOF
-    
-    $python_cmd /tmp/test_models.py
+    $python_cmd src/test_offline.py
     
     if [ $? -eq 0 ]; then
         echo ""
@@ -266,8 +219,7 @@ EOF
         echo "❌ 模型測試失敗 - 請檢查設定"
     fi
     
-    # Cleanup
-    rm -f /tmp/test_models.py
+    # No cleanup needed since we're using existing test file
     
     pause_for_input
 }

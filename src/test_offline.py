@@ -46,27 +46,83 @@ def load_model_manually(model_class, config_path, checkpoint_path, device="cpu",
     
     if attach_task:
         if 'task' in config:
-            # 直接手動建立 task 物件，不透過 config
+            # 🔥 簡化但有效的 task 設定
             from pyannote.audio.core.task import Specifications
             from pyannote.core import SlidingWindow
+            import torch.nn as nn
             
-            # 建立假的 specifications
-            duration = 10.0
+            # 從配置獲取參數
+            task_config = config['task']
+            duration = task_config.get('duration', 10.0)
+            max_speakers = task_config.get('max_speakers_per_frame', 2)
+            
+            # 建立 specifications
             step = 0.01  # 10ms step
             window = SlidingWindow(duration=duration, step=step)
+            classes = [f"speaker_{i}" for i in range(max_speakers + 1)]
+            
             specifications = Specifications(
                 problem="multilabel_classification",
                 resolution=window,
                 duration=duration,
-                classes=["speaker", "non_speaker"],
+                classes=classes,
                 permutation_invariant=True
             )
             
-            # 直接設定 model 的 specifications，不透過 Task
             model._specifications = specifications
+            
+            # 🔥 為 PyanNet 手動建立缺失的層
+            if model_class.__name__ == 'PyanNet':
+                # 獲取模型維度
+                linear_config = model_params.get('linear', {})
+                linear_dim = linear_config.get('hidden_size', 128)
+                num_classes = len(classes)
+                
+                # 手動建立 classifier 層
+                if not hasattr(model, 'classifier'):
+                    model.classifier = nn.Linear(linear_dim, num_classes)
+                
+                # 手動建立 activation 層
+                if not hasattr(model, 'activation'):
+                    model.activation = nn.Sigmoid()
+                
+                print(f"     🔧 已建立 classifier({linear_dim} -> {num_classes}) 和 activation 層")
     
     # PyTorch 2.6+ 預設 weights_only=True，這裡強制設為 False 以支援舊 checkpoint
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    
+    # 🔥 為 PyanNet 根據檢查點調整 classifier 維度
+    if model_class.__name__ == 'PyanNet' and attach_task:
+        if 'classifier.weight' in checkpoint['state_dict']:
+            # 從檢查點獲取正確的維度
+            checkpoint_classifier_shape = checkpoint['state_dict']['classifier.weight'].shape
+            correct_num_classes = checkpoint_classifier_shape[0]  # 輸出維度
+            correct_input_dim = checkpoint_classifier_shape[1]    # 輸入維度
+            
+            print(f"     🔧 從檢查點檢測到 classifier 維度: {correct_input_dim} -> {correct_num_classes}")
+            
+            # 重新建立正確維度的 classifier
+            import torch.nn as nn
+            model.classifier = nn.Linear(correct_input_dim, correct_num_classes)
+            
+            # 更新 specifications 的類別數
+            if hasattr(model, '_specifications'):
+                # 建立正確數量的類別
+                classes = [f"speaker_{i}" for i in range(correct_num_classes)]
+                from pyannote.audio.core.task import Specifications
+                from pyannote.core import SlidingWindow
+                
+                duration = model._specifications.duration
+                window = model._specifications.resolution
+                
+                model._specifications = Specifications(
+                    problem="multilabel_classification",
+                    resolution=window,
+                    duration=duration,
+                    classes=classes,
+                    permutation_invariant=True
+                )
+    
     model.load_state_dict(checkpoint['state_dict'], strict=False)
     
     model.to(device)
