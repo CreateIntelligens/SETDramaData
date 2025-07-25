@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  cosyvoice:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: cosyvoice
+    restart: unless-stopped
+    volumes:
+      - ./:/workspace/CosyVoice
+      - ./pretrained_models:/workspace/CosyVoice/pretrained_models
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONPATH=/workspace/CosyVoice:/workspace/CosyVoice/third_party/Matcha-TTS
+      - LANG=C.UTF-8
+      - LC_ALL=C.UTF-8
+      - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    runtime: nvidia
+    working_dir: /workspace/CosyVoice
+    command: ["python", "webui.py", "--port", "8080", "--model_dir", "iic/CosyVoice2-0.5B"]
+
+  cosyvoice-runtime:
+    build:
+      context: .
+      dockerfile: runtime/python/Dockerfile
+    container_name: cosyvoice-runtime
+    restart: unless-stopped
+    volumes:
+      - ./:/opt/CosyVoice/CosyVoice
+      - ./pretrained_models:/opt/CosyVoice/CosyVoice/pretrained_models
+    ports:
+      - "50051:50051"
+    environment:
+      - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    runtime: nvidia
+    working_dir: /opt/CosyVoice/CosyVoice
+    command: ["sh", "-c", "cd runtime/python/grpc && python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. cosyvoice.proto && python server.py --model_dir iic/CosyVoice2-0.5B"]
