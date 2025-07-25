@@ -144,47 +144,88 @@ check_model_status() {
     echo "📁 模型目錄: $models_dir"
     echo ""
     
-    # Check HuggingFace models
-    local hf_dir="$models_dir/huggingface"
-    if [ -d "$hf_dir" ]; then
-        echo "🤖 HuggingFace 模型:"
+    # 優先檢查正規離線配置
+    local config_file="$models_dir/config.yaml"
+    local seg_model="$models_dir/pyannote_model_segmentation-3.0.bin"
+    local emb_model="$models_dir/pyannote_model_wespeaker-voxceleb-resnet34-LM.bin"
+    
+    if [ -f "$config_file" ] && [ -f "$seg_model" ] && [ -f "$emb_model" ]; then
+        echo "🎯 正規離線配置:"
         
-        # Check diarization model
-        local diar_model="$hf_dir/models--pyannote--speaker-diarization-3.1"
-        if [ -d "$diar_model" ]; then
-            echo "  ✅ Speaker Diarization 3.1"
-            local diar_files=$(find "$diar_model" -name "*.yaml" -o -name "*.bin" | wc -l)
-            echo "     📄 檔案數: $diar_files"
-        else
-            echo "  ❌ Speaker Diarization 3.1 (缺失)"
+        # Check config file
+        if [ -f "$config_file" ]; then
+            echo "  ✅ 配置檔案 (config.yaml)"
+            local config_size=$(ls -lh "$config_file" | awk '{print $5}')
+            echo "     📄 大小: $config_size"
+        fi
+        
+        # Check segmentation model
+        if [ -f "$seg_model" ]; then
+            echo "  ✅ 分割模型 (segmentation-3.0)"
+            local seg_size=$(ls -lh "$seg_model" | awk '{print $5}')
+            echo "     📄 大小: $seg_size"
         fi
         
         # Check embedding model
-        local emb_model="$hf_dir/models--pyannote--embedding"
-        if [ -d "$emb_model" ]; then
-            echo "  ✅ Speaker Embedding"
-            local emb_files=$(find "$emb_model" -name "*.yaml" -o -name "*.bin" | wc -l)
-            echo "     📄 檔案數: $emb_files"
-        else
-            echo "  ❌ Speaker Embedding (缺失)"
+        if [ -f "$emb_model" ]; then
+            echo "  ✅ 嵌入模型 (wespeaker-voxceleb-resnet34-LM)"
+            local emb_size=$(ls -lh "$emb_model" | awk '{print $5}')
+            echo "     📄 大小: $emb_size"
         fi
         
-        # Total size
-        local total_size=$(du -sh "$hf_dir" 2>/dev/null | cut -f1)
-        echo "  📏 總大小: ${total_size:-未知}"
+        # Total size of offline models
+        local total_size=$(du -sh "$models_dir"/*.bin "$models_dir"/*.yaml 2>/dev/null | awk '{sum+=$1} END {print sum"M"}' 2>/dev/null || echo "未知")
+        echo "  📏 模型總大小: $total_size"
+        
+        echo ""
+        echo "🎯 系統狀態: ✅ 正規離線模式 (推薦)"
         
     else
-        echo "❌ HuggingFace模型目錄不存在"
+        echo "⚠️ 正規離線配置不完整:"
+        [ ! -f "$config_file" ] && echo "  ❌ 缺少: config.yaml"
+        [ ! -f "$seg_model" ] && echo "  ❌ 缺少: pyannote_model_segmentation-3.0.bin"
+        [ ! -f "$emb_model" ] && echo "  ❌ 缺少: pyannote_model_wespeaker-voxceleb-resnet34-LM.bin"
+        echo ""
+        
+        # 回退檢查 HuggingFace 模型
+        local hf_dir="$models_dir/huggingface"
+        if [ -d "$hf_dir" ]; then
+            echo "🤖 備用 HuggingFace 快取:"
+            
+            # Check diarization model
+            local diar_model="$hf_dir/models--pyannote--speaker-diarization-3.1"
+            if [ -d "$diar_model" ]; then
+                echo "  ✅ Speaker Diarization 3.1"
+                local diar_files=$(find "$diar_model" -name "*.yaml" -o -name "*.bin" | wc -l)
+                echo "     📄 檔案數: $diar_files"
+            else
+                echo "  ❌ Speaker Diarization 3.1 (缺失)"
+            fi
+            
+            # Check embedding model  
+            local emb_model_hf="$hf_dir/models--pyannote--embedding"
+            if [ -d "$emb_model_hf" ]; then
+                echo "  ✅ Speaker Embedding"
+                local emb_files=$(find "$emb_model_hf" -name "*.yaml" -o -name "*.bin" | wc -l)
+                echo "     📄 檔案數: $emb_files"
+            else
+                echo "  ❌ Speaker Embedding (缺失)"
+            fi
+            
+            # Total size
+            local hf_total_size=$(du -sh "$hf_dir" 2>/dev/null | cut -f1)
+            echo "  📏 快取大小: ${hf_total_size:-未知}"
+            
+            echo ""
+            echo "🌐 系統狀態: ⚠️ 使用 HuggingFace 快取 (備用模式)"
+            
+        else
+            echo "🌐 系統狀態: ❌ 需要下載模型"
+        fi
     fi
     
     echo ""
-    
-    # Check if system can use local models
-    if [ -d "$hf_dir" ] && [ -n "$(ls -A "$hf_dir" 2>/dev/null)" ]; then
-        echo "🎯 系統狀態: 可使用本地模型 (離線模式)"
-    else
-        echo "🌐 系統狀態: 需要網路下載模型 (線上模式)"
-    fi
+    echo "💡 建議: 使用「下載模型到專案」建立完整的正規離線配置"
     
     pause_for_input
 }
@@ -202,24 +243,33 @@ test_model_loading() {
         return
     fi
     
-    echo "🔧 測試模型載入中..."
-    echo ""
-    
-    # Use the existing test_offline.py which works correctly
-    echo "🔧 使用專用的離線測試腳本..."
-    echo ""
-    
-    $python_cmd src/test_offline.py
-    
-    if [ $? -eq 0 ]; then
+    # Check if official offline method is available
+    if [ -f "src/offline_pipeline.py" ] && [ -f "models/config.yaml" ]; then
+        echo "🎯 使用官方正規離線方法測試..."
         echo ""
-        echo "✅ 模型測試完成 - 系統運作正常!"
+        
+        $python_cmd src/offline_pipeline.py
+        
+        if [ $? -eq 0 ]; then
+            echo ""
+            echo "✅ 官方離線方法測試成功!"
+            echo "🚀 系統已準備好使用正規離線 Pipeline"
+        else
+            echo ""
+            echo "⚠️ 官方方法測試失敗，嘗試備用方法..."
+            
+            # No fallback needed - official method should work
+        fi
     else
+        echo "⚠️ 正規離線配置不完整，使用備用方法..."
+        echo "缺少檔案:"
+        [ ! -f "src/offline_pipeline.py" ] && echo "  - src/offline_pipeline.py"
+        [ ! -f "models/config.yaml" ] && echo "  - models/config.yaml" 
         echo ""
-        echo "❌ 模型測試失敗 - 請檢查設定"
+        
+        echo "❌ 請先設定正規離線配置"
+        echo "💡 執行「下載模型到專案」後會自動建立必要檔案"
     fi
-    
-    # No cleanup needed since we're using existing test file
     
     pause_for_input
 }

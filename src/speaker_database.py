@@ -17,7 +17,7 @@ from datetime import datetime
 class SpeakerDatabase:
     """SQLite-based speaker database for embedding storage and matching"""
     
-    def __init__(self, db_path: str = "speakers.db"):
+    def __init__(self, db_path: str = "data/speakers.db"):
         self.db_path = Path(db_path)
         self.init_database()
     
@@ -432,7 +432,7 @@ class SpeakerDatabase:
 
 
 # Migration utility function
-def migrate_from_json(json_path: str, db_path: str = "speakers.db"):
+def migrate_from_json(json_path: str, db_path: str = "data/speakers.db"):
     """Migrate from old JSON format to SQLite database"""
     if not Path(json_path).exists():
         print(f"❌ JSON file not found: {json_path}")
@@ -497,6 +497,6 @@ def migrate_from_json(json_path: str, db_path: str = "speakers.db"):
 
 if __name__ == "__main__":
     # Quick test/demo
-    db = SpeakerDatabase("test_speakers.db")
+    db = SpeakerDatabase("data/test_speakers.db")
     stats = db.get_database_stats()
     print("Database stats:", stats)

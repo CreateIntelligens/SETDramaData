@@ -133,8 +133,8 @@ def cmd_backup(args):
 
 def main():
     parser = argparse.ArgumentParser(description="Speaker Database Manager")
-    parser.add_argument("--database", "-d", default="speakers.db", 
-                       help="Path to SQLite database (default: speakers.db)")
+    parser.add_argument("--database", "-d", default="data/speakers.db", 
+                       help="Path to SQLite database (default: data/speakers.db)")
     
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
     

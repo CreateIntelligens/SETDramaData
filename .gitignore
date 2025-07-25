@@ -7,7 +7,7 @@ speakers.db
 debug_log.txt
 .python-version
 願望(音軌及字幕檔)
-models0/
+data/
 
 # Python artifacts
 __pycache__/
@@ -38,6 +38,9 @@ htmlcov/
 output*/
 .claude/
 split_dataset*/
+
+# 有符號連結問題的快照目錄
+models/huggingface/*/snapshots/*/
 
 # OS-specific files
 .DS_Store
