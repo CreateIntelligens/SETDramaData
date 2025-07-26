@@ -129,12 +129,18 @@ class EmbeddingInference:
             if OFFICIAL_OFFLINE_AVAILABLE and self.pipeline:
                 # 🎯 使用正規離線方法：從 pipeline 中取得 embedding 模型
                 print("📁 使用正規離線方法載入 embedding 模型...")
-                if hasattr(self.pipeline, '_embedding'):
-                    self.model = self.pipeline._embedding
-                    print("✅ 從 Pipeline 取得 Embedding 模型成功")
-                    return
-                else:
-                    print("⚠️ Pipeline 中沒有找到 embedding 模型，使用備用方法...")
+                print(f"🔍 Pipeline 屬性: {[attr for attr in dir(self.pipeline) if 'embed' in attr.lower()]}")
+                
+                # 嘗試不同的屬性名稱
+                for attr_name in ['_embedding', 'embedding', '_embedding_model', 'embedding_model']:
+                    if hasattr(self.pipeline, attr_name):
+                        embedding_model = getattr(self.pipeline, attr_name)
+                        if embedding_model is not None:
+                            self.model = embedding_model
+                            print(f"✅ 從 Pipeline.{attr_name} 取得 Embedding 模型成功")
+                            return
+                
+                print("⚠️ Pipeline 中沒有找到 embedding 模型，使用備用方法...")
             
             # 備用方法：傳統載入
             print("📁 使用備用方法載入 embedding 模型...")
@@ -147,9 +153,16 @@ class EmbeddingInference:
                 
                 if model_path.exists():
                     print(f"📁 載入正規離線模型: {model_path}")
-                    # 直接載入模型檔案（需要適當的配置）
-                    # 這部分較複雜，暫時跳過直接檔案載入
-                    pass
+                    try:
+                        from pyannote.audio import Model
+                        # 嘗試直接載入 .bin 檔案
+                        self.model = Model.from_pretrained(str(model_path)).to(self.device)
+                        self.model.eval()
+                        print("✅ 正規離線 Embedding 模型載入成功")
+                        return
+                    except Exception as e:
+                        print(f"⚠️ 直接載入 .bin 檔案失敗: {e}")
+                        # 繼續使用備用方法
             
             # 最後的備用方法
             project_root = Path(__file__).parent.parent
@@ -438,6 +451,19 @@ def main():
     print("5. 執行 speaker diarization...")
     diarization = perform_speaker_diarization(args.audio_file, diarization_pipeline, device)
 
+    # 載入 embedding model (在釋放 pipeline 前)
+    print("6. 載入 embedding 模型...")
+    
+    try:
+        # 🎯 在所有模式下都載入 embedding 模型，因為後續處理需要用到
+        embedding_inference = EmbeddingInference(device, pipeline=diarization_pipeline if OFFICIAL_OFFLINE_AVAILABLE else None)
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception as e:
+        print(f"❌ Embedding 模型載入失敗: {e}")
+        sys.exit(1)
+
     # 釋放 pipeline 記憶體
     print("🧹 釋放 pipeline 記憶體...")
     del diarization_pipeline
@@ -445,25 +471,6 @@ def main():
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-
-    # 載入 embedding model
-    print("6. 載入 embedding 模型...")
-    
-    if OFFICIAL_OFFLINE_AVAILABLE:
-        # 🎯 正規離線環境：跳過獨立 embedding 載入
-        print("💡 正規離線環境：embedding 功能已整合在 diarization pipeline 中")
-        print("✅ 跳過獨立 embedding 模型載入，避免重複資源使用")
-        embedding_inference = None
-    else:
-        # 🔄 備用環境：載入獨立 embedding 模型
-        try:
-            embedding_inference = EmbeddingInference(device, pipeline=None)
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        except Exception as e:
-            print(f"❌ Embedding 模型載入失敗: {e}")
-            sys.exit(1)
 
     # 執行說話人級別分段
     print("7. 執行說話人級別分段...")

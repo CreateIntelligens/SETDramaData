@@ -41,12 +41,13 @@ show_settings_menu() {
         echo "⚙️ 設定管理"
         echo "=========="
         echo "1. 查看目前設定 (View Current Settings)"
-        echo "2. 設定Embedding參數 (Configure Embedding)"
-        echo "3. 設定處理模式 (Configure Processing Mode)"
-        echo "4. 重置為預設值 (Reset to Defaults)"
-        echo "5. 返回主選單 (Back to Main Menu)"
+        echo "2. 設定目錄路徑 (Configure Directory Paths)"
+        echo "3. 設定Embedding參數 (Configure Embedding)"
+        echo "4. 設定處理模式 (Configure Processing Mode)"
+        echo "5. 重置為預設值 (Reset to Defaults)"
+        echo "6. 返回主選單 (Back to Main Menu)"
         echo ""
-        echo -n "請選擇 [1-5]: "
+        echo -n "請選擇 [1-6]: "
         read choice
         
         case "$choice" in
@@ -54,15 +55,18 @@ show_settings_menu() {
                 show_current_settings
                 ;;
             2)
-                configure_embedding_settings
+                configure_directory_paths
                 ;;
             3)
-                configure_processing_mode
+                configure_embedding_settings
                 ;;
             4)
-                reset_to_defaults
+                configure_processing_mode
                 ;;
             5)
+                reset_to_defaults
+                ;;
+            6)
                 return
                 ;;
             *)
@@ -111,6 +115,64 @@ show_current_settings() {
         echo "  本地模型: ❌ 未安裝"
     fi
     
+    pause_for_input
+}
+
+# Configure directory paths
+configure_directory_paths() {
+    echo ""
+    echo "📁 設定目錄路徑"
+    echo "==============="
+    
+    echo "目前設定:"
+    echo "  輸入目錄: ${DEFAULT_INPUT_DIR:-data/願望(音軌及字幕檔)}"
+    echo "  處理結果目錄: ${DEFAULT_PROCESSED_DIR:-data/output}"
+    echo "  切分資料集目錄: ${DEFAULT_SPLIT_DIR:-data/split_dataset}"
+    echo "  測試集比例: ${DEFAULT_TEST_RATIO:-0.2}"
+    echo ""
+    
+    echo "設定說明:"
+    echo "• 輸入目錄: 存放音檔和字幕檔的目錄"
+    echo "• 處理結果目錄: 分段後音檔的儲存位置"
+    echo "• 切分資料集目錄: 訓練/測試集的儲存位置"
+    echo "• 測試集比例: 用於測試的資料比例 (0.1-0.3)"
+    echo ""
+    
+    # Input directory
+    echo -n "輸入目錄 [目前: ${DEFAULT_INPUT_DIR:-data/願望(音軌及字幕檔)}]: "
+    read new_input_dir
+    if [ -n "$new_input_dir" ]; then
+        export DEFAULT_INPUT_DIR="$new_input_dir"
+        update_env_setting "DEFAULT_INPUT_DIR" "\"$new_input_dir\""
+    fi
+    
+    # Processed directory
+    echo -n "處理結果目錄 [目前: ${DEFAULT_PROCESSED_DIR:-data/output}]: "
+    read new_processed_dir
+    if [ -n "$new_processed_dir" ]; then
+        export DEFAULT_PROCESSED_DIR="$new_processed_dir"
+        update_env_setting "DEFAULT_PROCESSED_DIR" "\"$new_processed_dir\""
+    fi
+    
+    # Split dataset directory
+    echo -n "切分資料集目錄 [目前: ${DEFAULT_SPLIT_DIR:-data/split_dataset}]: "
+    read new_split_dir
+    if [ -n "$new_split_dir" ]; then
+        export DEFAULT_SPLIT_DIR="$new_split_dir"
+        update_env_setting "DEFAULT_SPLIT_DIR" "\"$new_split_dir\""
+    fi
+    
+    # Test ratio
+    echo -n "測試集比例 [目前: ${DEFAULT_TEST_RATIO:-0.2}]: "
+    read new_test_ratio
+    if [ -n "$new_test_ratio" ]; then
+        export DEFAULT_TEST_RATIO="$new_test_ratio"
+        update_env_setting "DEFAULT_TEST_RATIO" "\"$new_test_ratio\""
+    fi
+    
+    echo ""
+    echo "✅ 目錄設定已更新並儲存到 .env"
+    echo "💡 新設定將在下次執行時生效"
     pause_for_input
 }
 
@@ -254,7 +316,7 @@ reset_to_defaults() {
     # Remove custom settings from .env
     if [ -f ".env" ]; then
         cp .env .env.backup
-        grep -v "^SIMILARITY_THRESHOLD\|^VOICE_ACTIVITY_THRESHOLD\|^MIN_SPEAKER_DURATION" .env > .env.tmp
+        grep -v "^SIMILARITY_THRESHOLD\|^VOICE_ACTIVITY_THRESHOLD\|^MIN_SPEAKER_DURATION\|^DEFAULT_INPUT_DIR\|^DEFAULT_PROCESSED_DIR\|^DEFAULT_SPLIT_DIR\|^DEFAULT_TEST_RATIO" .env > .env.tmp
         mv .env.tmp .env
         echo "💾 已備份原設定到 .env.backup"
     fi
@@ -263,11 +325,19 @@ reset_to_defaults() {
     unset SIMILARITY_THRESHOLD
     unset VOICE_ACTIVITY_THRESHOLD
     unset MIN_SPEAKER_DURATION
+    unset DEFAULT_INPUT_DIR
+    unset DEFAULT_PROCESSED_DIR
+    unset DEFAULT_SPLIT_DIR
+    unset DEFAULT_TEST_RATIO
     
     echo "✅ 已重置為預設值"
     echo "   識別閾值: 0.40"
     echo "   語音活動閾值: 0.1"
     echo "   最小說話人時長: 5.0秒"
+    echo "   輸入目錄: data/願望(音軌及字幕檔)"
+    echo "   處理結果目錄: data/output"
+    echo "   切分資料集目錄: data/split_dataset"
+    echo "   測試集比例: 0.2"
     
     pause_for_input
 }

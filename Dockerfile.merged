@@ -55,10 +55,11 @@ WORKDIR /workspace
 # Install CosyVoice dependencies (without source code)
 RUN conda activate ${VENV} && conda install -y -c conda-forge pynini==2.1.5
 
-# Install core PyTorch
+# Install PyTorch with CUDA 12.4 support
 RUN conda activate ${VENV} && \
-    pip install --retries 3 --timeout 300 torch==2.3.1 torchaudio==2.3.1 \
-    -i https://pypi.org/simple/
+    pip install --retries 3 --timeout 300 \
+    torch>=2.0.0 torchaudio>=2.0.0 \
+    --index-url https://download.pytorch.org/whl/cu124
 
 # Install CosyVoice requirements manually (key packages)
 RUN conda activate ${VENV} && \
@@ -74,29 +75,14 @@ RUN conda activate ${VENV} && \
 # Copy requirements.txt first
 COPY requirements.txt /tmp/requirements.txt
 
-# Install Python dependencies with CUDA 12.4 support (matching original Dockerfile)
+# Install etl Python dependencies
 RUN conda activate ${VENV} && \
-    pip install --retries 3 --timeout 300 \
-    torch>=2.0.0 torchaudio>=2.0.0 \
-    --index-url https://download.pytorch.org/whl/cu124 && \
     pip install --retries 3 --timeout 300 \
     -i https://pypi.org/simple/ \
     -r /tmp/requirements.txt && \
     rm /tmp/requirements.txt
 
-# Pre-download pyannote model (requires HF token at build time)
-ARG HUGGINGFACE_TOKEN
-ENV HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
-ENV HF_TOKEN=${HUGGINGFACE_TOKEN}
-
-# Download models as root before switching to louis user
-RUN if [ -n "$HUGGINGFACE_TOKEN" ]; then \
-    conda activate ${VENV} && \
-    python3 -c "from pyannote.audio import Pipeline, Model; Pipeline.from_pretrained('pyannote/speaker-diarization-3.1'); Model.from_pretrained('pyannote/embedding')" && \
-    echo "✅ Both diarization and embedding models downloaded successfully"; \
-    else \
-    echo "⚠️  No HUGGINGFACE_TOKEN provided - models will be downloaded at runtime"; \
-    fi
+# 離線環境不需要預下載模型，模型將透過掛載提供
 
 # Create directory for etl project (will be mounted)
 RUN mkdir -p /workspace/etl
@@ -126,37 +112,14 @@ RUN echo '#!/bin/bash' > /usr/local/bin/activate-env && \
     echo 'fi' >> /usr/local/bin/activate-env && \
     chmod +x /usr/local/bin/activate-env
 
-# Create memory requirements documentation (merged version needs more memory)
-RUN echo "=== 記憶體需求說明 (CosyVoice + Pyannote) ===" > /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "最低需求: 8GB RAM (包含 CosyVoice TTS + Pyannote Audio)" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "建議配置: 12GB RAM + 4GB Swap" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "共享記憶體: 4GB (用於大型 AI 模型)" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "執行指令範例:" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "docker run --shm-size=16g --ulimit memlock=-1 [IMAGE]" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "模型記憶體使用量:" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "- CosyVoice TTS Model: ~2-3GB" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "- Pyannote Segmentation: ~500MB" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "- Pyannote Embedding: ~400MB" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "- Pipeline Overhead: ~1-2GB" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "- Audio Processing: ~500MB" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "- Conda + System: ~1GB" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "注意事項:" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "- 合併版本包含兩套 AI 系統，記憶體需求更高" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "- 如果記憶體不足，程序會被 Killed (OOM Killer)" >> /workspace/MEMORY_REQUIREMENTS.txt && \
-    echo "- 建議在有充足 RAM 的機器上運行" >> /workspace/MEMORY_REQUIREMENTS.txt
+# 離線環境記憶體使用較為精簡，不需要額外限制
 
 # Create non-root user for security
 RUN useradd -m -u 1000 louis && \
     chown -R louis:louis /workspace
 USER louis
 
-# Set default environment variables (reset for user)
-ENV HUGGINGFACE_TOKEN=""
-ENV HF_TOKEN=""
+# 離線環境不需要 HuggingFace token
 
 # Set default working directory to CosyVoice (keeping original behavior)
 WORKDIR /workspace/CosyVoice

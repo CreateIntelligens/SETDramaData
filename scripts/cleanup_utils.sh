@@ -13,15 +13,19 @@ clean_output_files() {
     echo "🗑️ 清除所有輸出檔案"
     echo "=================="
     
-    if ! check_directory "output"; then
+    # Use DEFAULT_PROCESSED_DIR from .env or fallback
+    PROCESSED_DIR="${DEFAULT_PROCESSED_DIR:-data/output}"
+    
+    if [ ! -d "$PROCESSED_DIR" ]; then
+        echo "❌ 輸出目錄不存在: $PROCESSED_DIR"
         pause_for_input
         return
     fi
     
     # Count files to be deleted
-    wav_count=$(find output -name "*.wav" 2>/dev/null | wc -l)
-    txt_count=$(find output -name "*.txt" 2>/dev/null | wc -l)
-    tsv_count=$(find output -name "*.tsv" 2>/dev/null | wc -l)
+    wav_count=$(find "$PROCESSED_DIR" -name "*.wav" 2>/dev/null | wc -l)
+    txt_count=$(find "$PROCESSED_DIR" -name "*.txt" 2>/dev/null | wc -l)
+    tsv_count=$(find "$PROCESSED_DIR" -name "*.tsv" 2>/dev/null | wc -l)
     
     echo "📊 將刪除："
     echo "  音頻檔案: $wav_count 個"
@@ -34,7 +38,8 @@ clean_output_files() {
     if get_confirmation "確定要繼續嗎？"; then
         echo ""
         echo "🗑️ 刪除中..."
-        if rm -rf output; then
+        
+        if rm -rf "$PROCESSED_DIR"; then
             echo "✅ 所有輸出檔案已清除（處理狀態保留）"
         else
             echo "❌ 清除失敗"
@@ -164,33 +169,38 @@ clean_split_dataset() {
     echo "🗑️ 清除切分資料集"
     echo "================"
     
-    if ! check_directory "split_dataset"; then
+    # Use DEFAULT_SPLIT_DIR from .env or fallback
+    SPLIT_DIR="${DEFAULT_SPLIT_DIR:-data/split_dataset}"
+    
+    if [ ! -d "$SPLIT_DIR" ]; then
+        echo "❌ 切分資料集目錄不存在: $SPLIT_DIR"
         pause_for_input
         return
     fi
     
     # Count files to be deleted with detailed breakdown
-    train_count=$(find split_dataset/train -name "*.wav" 2>/dev/null | wc -l)
-    test_count=$(find split_dataset/test -name "*.wav" 2>/dev/null | wc -l)
-    train_txt_count=$(find split_dataset/train -name "*.txt" 2>/dev/null | wc -l)
-    test_txt_count=$(find split_dataset/test -name "*.txt" 2>/dev/null | wc -l)
+    train_count=$(find "$SPLIT_DIR/train" -name "*.wav" 2>/dev/null | wc -l)
+    test_count=$(find "$SPLIT_DIR/test" -name "*.wav" 2>/dev/null | wc -l)
+    train_txt_count=$(find "$SPLIT_DIR/train" -name "*.txt" 2>/dev/null | wc -l)
+    test_txt_count=$(find "$SPLIT_DIR/test" -name "*.txt" 2>/dev/null | wc -l)
     
     # Count episodes in split dataset
-    train_episodes=$(find split_dataset/train -maxdepth 2 -type d -name "[0-9][0-9][0-9]" 2>/dev/null | wc -l)
-    test_episodes=$(find split_dataset/test -maxdepth 2 -type d -name "[0-9][0-9][0-9]" 2>/dev/null | wc -l)
+    train_episodes=$(find "$SPLIT_DIR/train" -maxdepth 2 -type d -name "[0-9][0-9][0-9]" 2>/dev/null | wc -l)
+    test_episodes=$(find "$SPLIT_DIR/test" -maxdepth 2 -type d -name "[0-9][0-9][0-9]" 2>/dev/null | wc -l)
     
     echo "📊 切分資料集狀態："
     echo "  訓練集: $train_count 音頻檔 + $train_txt_count 文字檔 ($train_episodes 集)"
     echo "  測試集: $test_count 音頻檔 + $test_txt_count 文字檔 ($test_episodes 集)"
     echo "  總計: $((train_count + test_count)) 音頻檔"
     echo ""
-    echo "⚠️  這只會刪除切分資料集，不影響原始處理檔案 (output/) 和狀態記錄！"
+    echo "⚠️  這只會刪除切分資料集，不影響原始處理檔案 ($PROCESSED_DIR) 和狀態記錄！"
     echo "💡 原始處理檔案仍可重新切分"
     
     if get_confirmation "確定要繼續嗎？"; then
         echo ""
         echo "🗑️ 刪除中..."
-        if rm -rf split_dataset; then
+        
+        if rm -rf "$SPLIT_DIR"; then
             echo "✅ 切分資料集已清除（原始檔案保留）"
         else
             echo "❌ 清除失敗"
@@ -209,7 +219,10 @@ clean_specific_episodes() {
     echo "🗑️ 清除特定集數處理結果"
     echo "===================="
     
-    if ! check_directory "output"; then
+    # Use environment variables for output directory
+    PROCESSED_DIR="${DEFAULT_PROCESSED_DIR:-data/output}"
+    
+    if ! check_directory "$PROCESSED_DIR"; then
         pause_for_input
         return
     fi
@@ -290,9 +303,9 @@ EOF
         echo "📋 無處理狀態記錄"
         
         # Still check for files
-        if [ -d "output" ]; then
-            echo "📁 output/ 目錄存在，檢查檔案..."
-            episodes_in_output=$(find output -maxdepth 2 -type d -name "[0-9][0-9][0-9]" 2>/dev/null | sed 's/.*\///;s/^0*//' | sort -n | uniq)
+        if [ -d "$PROCESSED_DIR" ]; then
+            echo "📁 $PROCESSED_DIR 目錄存在，檢查檔案..."
+            episodes_in_output=$(find "$PROCESSED_DIR" -maxdepth 2 -type d -name "[0-9][0-9][0-9]" 2>/dev/null | sed 's/.*\///;s/^0*//' | sort -n | uniq)
             if [ -n "$episodes_in_output" ]; then
                 echo "  有檔案的集數: $(echo $episodes_in_output | tr '\n' ' ')"
             else
@@ -342,7 +355,7 @@ EOF
             files_count=0
             
             # Search all speaker directories for this episode
-            for speaker_dir in output/*/; do
+            for speaker_dir in $PROCESSED_DIR/*/; do
                 if [ -d "$speaker_dir" ]; then
                     episode_dir="$speaker_dir$episode_padded"
                     if [ -d "$episode_dir" ]; then
@@ -500,9 +513,13 @@ clean_all_data() {
     echo "💀 全部清除 (危險操作)"
     echo "=================="
     echo ""
+    # Use environment variables for paths
+    PROCESSED_DIR="${DEFAULT_PROCESSED_DIR:-data/output}"
+    SPLIT_DIR="${DEFAULT_SPLIT_DIR:-data/split_dataset}"
+    
     echo "⚠️  這將刪除所有處理過的資料，包括："
-    echo "  📁 輸出檔案 (output/)"
-    echo "  📁 切分資料集 (split_dataset/)"
+    echo "  📁 輸出檔案 ($PROCESSED_DIR)"
+    echo "  📁 切分資料集 ($SPLIT_DIR)"
     if [ -f "speakers.db" ]; then
         echo "  🗄️ SQLite資料庫 (speakers.db)"
     fi
@@ -521,8 +538,8 @@ clean_all_data() {
             local success=true
             
             # Remove output directory
-            if [ -d "output" ]; then
-                if rm -rf output; then
+            if [ -d "$PROCESSED_DIR" ]; then
+                if rm -rf "$PROCESSED_DIR"; then
                     echo "✅ 已清除輸出檔案"
                 else
                     echo "❌ 清除輸出檔案失敗"
@@ -531,8 +548,8 @@ clean_all_data() {
             fi
             
             # Remove split dataset
-            if [ -d "split_dataset" ]; then
-                if rm -rf split_dataset; then
+            if [ -d "$SPLIT_DIR" ]; then
+                if rm -rf "$SPLIT_DIR"; then
                     echo "✅ 已清除切分資料集"
                 else
                     echo "❌ 清除切分資料集失敗"

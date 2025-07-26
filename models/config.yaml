@@ -5,15 +5,15 @@ pipeline:
   params:
     clustering: AgglomerativeClustering
     embedding: pyannote_model_wespeaker-voxceleb-resnet34-LM.bin
-    embedding_batch_size: 32
+    embedding_batch_size: 128  # 增加批次大小充分利用H100
     embedding_exclude_overlap: true
     segmentation: pyannote_model_segmentation-3.0.bin
-    segmentation_batch_size: 32
+    segmentation_batch_size: 128  # 增加批次大小充分利用H100
 
 params:
   clustering:
     method: centroid
-    min_cluster_size: 12
-    threshold: 0.55  # 降低閾值以減少說話人數量
+    min_cluster_size: 15
+    threshold: 0.7045654963945799  # 恢復原始預設值
   segmentation:
     min_duration_off: 0.0

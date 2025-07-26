@@ -62,59 +62,26 @@ class OfflinePipelineLoader:
         return missing_files
     
     def load_pipeline(self):
-        """
-        載入離線 Pipeline
-        支援兩種載入方式：新的正規方式和舊的 HuggingFace 方式
-        """
-        # 先嘗試新的正規方式
+        """載入正規離線 Pipeline"""
         missing_files = self.verify_model_files()
-        if not missing_files:
-            print("🎯 嘗試新的正規離線方式...")
-            try:
-                return self._load_pipeline_new_method()
-            except Exception as e:
-                print(f"⚠️ 新方式失敗: {e}")
-                print("🔄 回退到舊版本載入方式...")
+        if missing_files:
+            raise FileNotFoundError(f"缺少必要的模型檔案: {[f[0] for f in missing_files]}")
         
-        # 回退到舊版本 HuggingFace 方式
-        return self._load_pipeline_legacy_method()
+        print("🎯 載入正規離線 Pipeline...")
+        return self._load_pipeline_new_method()
     
     def _load_pipeline_new_method(self):
-        """新的正規離線方式（使用 .bin 檔案）"""
+        """正規離線方式（使用 .bin 檔案和 config.yaml）"""
         original_cwd = Path.cwd().resolve()
         
         try:
             os.chdir(self.models_dir)
             from pyannote.audio import Pipeline
             pipeline = Pipeline.from_pretrained(str(self.config_path))
+            print("✅ 正規離線 Pipeline 載入成功")
             return pipeline
         finally:
             os.chdir(original_cwd)
-    
-    def _load_pipeline_legacy_method(self):
-        """舊版本 HuggingFace 載入方式"""
-        print("🔄 使用舊版本 HuggingFace 載入方式...")
-        
-        # 查找 HuggingFace 目錄中的配置檔案
-        hf_dir = self.models_dir / "huggingface" / "models--pyannote--speaker-diarization-3.1"
-        
-        if not hf_dir.exists():
-            raise FileNotFoundError(f"找不到 HuggingFace 模型目錄: {hf_dir}")
-        
-        # 查找快照目錄中的 config.yaml
-        snapshots_dir = hf_dir / "snapshots"
-        if snapshots_dir.exists():
-            for snapshot_dir in snapshots_dir.iterdir():
-                config_file = snapshot_dir / "config.yaml"
-                if config_file.exists():
-                    print(f"📁 找到配置檔案: {config_file}")
-                    
-                    from pyannote.audio import Pipeline
-                    pipeline = Pipeline.from_pretrained(str(config_file))
-                    print("✅ 舊版本載入方式成功！")
-                    return pipeline
-        
-        raise FileNotFoundError("找不到有效的 HuggingFace 配置檔案")
     
     def setup_gpu_if_available(self, pipeline):
         """如果有 GPU 可用，將 Pipeline 移到 GPU"""
@@ -145,7 +112,7 @@ def load_offline_pipeline(project_root=None):
     
     return pipeline, device_type
 
-def test_offline_pipeline(project_root=None, force_legacy=False):
+def test_offline_pipeline(project_root=None):
     """測試離線 Pipeline 載入"""
     print("🎯 測試正規離線 Pipeline 載入")
     print("=" * 50)
@@ -153,25 +120,19 @@ def test_offline_pipeline(project_root=None, force_legacy=False):
     try:
         loader = OfflinePipelineLoader(project_root)
         
-        if force_legacy:
-            print("🔄 強制使用舊版本載入方式...")
-            pipeline = loader._load_pipeline_legacy_method()
-        else:
-            # 驗證檔案
-            print("📁 驗證模型檔案...")
-            missing_files = loader.verify_model_files()
-            if missing_files:
-                print("❌ 缺少檔案:")
-                for filename, desc in missing_files:
-                    print(f"  - {desc}: {filename}")
-                return False
-            print("✅ 所有檔案存在")
-            
-            # 載入 Pipeline
-            print("🚀 載入 Pipeline...")
-            pipeline = loader.load_pipeline()
+        # 驗證檔案
+        print("📁 驗證模型檔案...")
+        missing_files = loader.verify_model_files()
+        if missing_files:
+            print("❌ 缺少檔案:")
+            for filename, desc in missing_files:
+                print(f"  - {desc}: {filename}")
+            return False
+        print("✅ 所有檔案存在")
         
-        print("✅ Pipeline 載入成功")
+        # 載入 Pipeline
+        print("🚀 載入 Pipeline...")
+        pipeline = loader.load_pipeline()
         
         # 設定 GPU
         device_type = loader.setup_gpu_if_available(pipeline)
