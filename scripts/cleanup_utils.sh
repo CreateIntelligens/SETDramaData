@@ -65,7 +65,7 @@ reset_processing_state() {
         has_json=true
     fi
     
-    if [ -f "speakers.db" ]; then
+    if [ -f "data/speakers.db" ]; then
         has_db=true
     fi
     
@@ -132,7 +132,7 @@ EOF
         
         # Remove SQLite database
         if [ "$has_db" = true ]; then
-            if rm -f "speakers.db"; then
+            if rm -f "data/speakers.db"; then
                 echo "✅ SQLite資料庫已重置"
             else
                 echo "❌ SQLite資料庫重置失敗"
@@ -232,7 +232,7 @@ clean_specific_episodes() {
     
     # Check SQLite database first
     local python_cmd=$(detect_python)
-    if [ -f "speakers.db" ] && [ -n "$python_cmd" ]; then
+    if [ -f "data/speakers.db" ] && [ -n "$python_cmd" ]; then
         echo "🗄️ SQLite資料庫:"
         $python_cmd "src/database_cleanup.py" show
         echo ""
@@ -439,7 +439,7 @@ EOF
             
             if [ ${#successfully_deleted[@]} -gt 0 ]; then
                 # Update SQLite database
-                if [ -f "speakers.db" ] && [ -n "$python_cmd" ]; then
+                if [ -f "data/speakers.db" ] && [ -n "$python_cmd" ]; then
                     echo "🗄️ 更新SQLite資料庫狀態..."
                     $python_cmd "src/database_cleanup.py" remove "${successfully_deleted[@]}"
                 fi
@@ -520,8 +520,8 @@ clean_all_data() {
     echo "⚠️  這將刪除所有處理過的資料，包括："
     echo "  📁 輸出檔案 ($PROCESSED_DIR)"
     echo "  📁 切分資料集 ($SPLIT_DIR)"
-    if [ -f "speakers.db" ]; then
-        echo "  🗄️ SQLite資料庫 (speakers.db)"
+    if [ -f "data/speakers.db" ]; then
+        echo "  🗄️ SQLite資料庫 (data/speakers.db)"
     fi
     if [ -f "processing_state.json" ]; then
         echo "  📄 舊版JSON狀態 (processing_state.json)"
@@ -558,8 +558,8 @@ clean_all_data() {
             fi
             
             # Remove SQLite database
-            if [ -f "speakers.db" ]; then
-                if rm -f speakers.db; then
+            if [ -f "data/speakers.db" ]; then
+                if rm -f data/speakers.db; then
                     echo "✅ 已清除SQLite資料庫"
                 else
                     echo "❌ 清除SQLite資料庫失敗"

@@ -61,26 +61,30 @@ RUN conda activate ${VENV} && \
     torch>=2.0.0 torchaudio>=2.0.0 \
     --index-url https://download.pytorch.org/whl/cu124
 
-# Install CosyVoice requirements manually (key packages)
-RUN conda activate ${VENV} && \
-    pip install --retries 3 --timeout 300 \
-    transformers==4.40.1 lightning==2.2.4 librosa==0.10.2 \
-    diffusers==0.29.0 fastapi==0.115.6 gradio==5.4.0 \
-    soundfile==0.12.1 matplotlib==3.7.5 omegaconf==2.3.0 \
-    -i https://pypi.org/simple/
-
 # ==================================================================
-# Add etl dependencies (from requirements.txt)
+# Install CosyVoice requirements (as base)
 # ------------------------------------------------------------------
-# Copy requirements.txt first
-COPY requirements.txt /tmp/requirements.txt
+# Copy CosyVoice requirements
+COPY cosyvoice_docker/requirements.txt /tmp/cosyvoice_requirements.txt
 
-# Install etl Python dependencies
+# Install CosyVoice dependencies first
 RUN conda activate ${VENV} && \
     pip install --retries 3 --timeout 300 \
     -i https://pypi.org/simple/ \
-    -r /tmp/requirements.txt && \
-    rm /tmp/requirements.txt
+    -r /tmp/cosyvoice_requirements.txt && \
+    rm /tmp/cosyvoice_requirements.txt
+
+# ==================================================================
+# Add Breeze ASR specific dependencies (minimal additions)
+# ------------------------------------------------------------------
+# Install only the additional packages needed for Breeze ASR
+RUN conda activate ${VENV} && \
+    pip install --retries 3 --timeout 300 \
+    -i https://pypi.org/simple/ \
+    pyannote.audio>=3.1.0 \
+    speechbrain>=0.5.0 \
+    asteroid-filterbanks>=0.4.0 \
+    resampy>=0.4.0
 
 # 離線環境不需要預下載模型，模型將透過掛載提供
 

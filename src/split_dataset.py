@@ -94,28 +94,30 @@ def split_by_files(data_dir: str, output_dir: str, test_ratio: float = 0.2):
 
 def main():
     parser = argparse.ArgumentParser(description="Split dataset into train and test sets")
-    parser.add_argument("data_dir", help="Path to the dataset directory")
-    parser.add_argument("--output_dir", default="split_dataset", help="Output directory for split dataset")
+    parser.add_argument("--processed_dir", default="data/output", help="Path to the processed dataset directory")
+    parser.add_argument("--split_dir", default="data/split_dataset", help="Output directory for split dataset")
     parser.add_argument("--method", choices=["speaker", "files", "episode"], default="files", 
                        help="Split method: speaker, files, or episode")
     parser.add_argument("--test_ratio", type=float, default=0.2, help="Test set ratio (for speaker/files methods)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--episodes", help="Specific episodes to split (e.g., '1,2,3')")
+    parser.add_argument("--auto_yes", action="store_true", help="Auto confirm all prompts")
     
     args = parser.parse_args()
     
     # Set random seed
     random.seed(args.seed)
     
-    if not os.path.exists(args.data_dir):
-        print(f"❌ Data directory not found: {args.data_dir}")
+    if not os.path.exists(args.processed_dir):
+        print(f"❌ Processed directory not found: {args.processed_dir}")
         return
     
     print(f"🔄 Splitting dataset using '{args.method}' method...")
-    print(f"📁 Input directory: {args.data_dir}")
-    print(f"📁 Output directory: {args.output_dir}")
+    print(f"📁 Input directory: {args.processed_dir}")
+    print(f"📁 Output directory: {args.split_dir}")
     
     if args.method == "files":
-        split_by_files(args.data_dir, args.output_dir, args.test_ratio)
+        split_by_files(args.processed_dir, args.split_dir, args.test_ratio)
     
     print("✅ Dataset split completed!")
 
