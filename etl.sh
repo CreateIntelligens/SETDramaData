@@ -27,6 +27,8 @@ source "scripts/smart_process.sh"
 source "scripts/model_management.sh"
 source "scripts/settings_management.sh"
 source "scripts/database_management.sh"
+source "scripts/uvr5_utils.sh"
+
 
 # Smart process menu
 smart_process_menu() {
@@ -41,15 +43,73 @@ smart_process_menu() {
     echo "• 全程自動化，無需確認"
     echo ""
     echo "請選擇處理方式："
-    echo "1. 處理單集"
-    echo "2. 處理多集"
-    echo "3. 返回主選單"
+    echo "1. 🚀 智慧一條龍處理 (標準)"
+    echo "2. 🎵 智慧一條龍處理 + UVR5人聲分離"
+    echo "3. 處理單集"
+    echo "4. 處理多集"
+    echo "5. 返回主選單"
     echo ""
-    echo -n "請選擇 [1-3]: "
+    echo -n "請選擇 [1-5]: "
     read choice
     
     case "$choice" in
         1)
+            echo ""
+            echo "📋 標準智慧一條龍處理"
+            echo "請輸入集數範圍（例如：1 2 3 或 1-5）："
+            echo -n "集數: "
+            read episodes_input
+            
+            # Parse episodes input
+            episodes_output=$(validate_episode_input "$episodes_input")
+            if [ $? -eq 0 ]; then
+                readarray -t episodes <<< "$episodes_output"
+                smart_process_episodes "${episodes[@]}"
+            else
+                echo "$episodes_output"
+            fi
+            pause_for_input
+            ;;
+        2)
+            echo ""
+            echo "🎵 智慧一條龍處理 + UVR5人聲分離"
+            echo "⚠️  此選項會在標準處理完成後，對切分資料集進行 UVR5 人聲分離（去背景音樂）"
+            echo ""
+            echo "請輸入集數範圍（例如：1 2 3 或 1-5）："
+            echo -n "集數: "
+            read episodes_input
+            
+            # Parse episodes input
+            episodes_output=$(validate_episode_input "$episodes_input")
+            if [ $? -eq 0 ]; then
+                readarray -t episodes <<< "$episodes_output"
+                
+                # 先執行標準處理
+                echo "🚀 執行標準智慧處理..."
+                if smart_process_episodes "${episodes[@]}"; then
+                    echo ""
+                    echo "🎵 開始 UVR5 人聲分離..."
+                    echo -n "是否對處理結果進行 UVR5 人聲分離? [Y/n]: "
+                    read confirm_uvr5
+                    
+                    if [[ ! "$confirm_uvr5" =~ ^[Nn]$ ]]; then
+                        # 檢查 UVR5 環境
+                        if check_uvr5_environment >/dev/null 2>&1; then
+                            uvr5_enhance_split_dataset "data/split_dataset" "false"
+                        else
+                            echo "❌ UVR5 環境未準備就緒"
+                            echo "請先檢查 UVR5 設定和模型檔案"
+                        fi
+                    fi
+                else
+                    echo "❌ 標準處理失敗，跳過 UVR5 人聲分離"
+                fi
+            else
+                echo "$episodes_output"
+            fi
+            pause_for_input
+            ;;
+        3)
             echo ""
             echo -n "請輸入集數: "
             read episode_num
@@ -60,7 +120,7 @@ smart_process_menu() {
             fi
             pause_for_input
             ;;
-        2)
+        4)
             echo ""
             echo "請輸入集數範圍（例如：1 2 3 或 1-5）："
             echo -n "集數: "
@@ -76,7 +136,7 @@ smart_process_menu() {
             fi
             pause_for_input
             ;;
-        3)
+        5)
             return
             ;;
         *)
@@ -89,22 +149,23 @@ smart_process_menu() {
 # Function to show main menu
 show_menu() {
     clear
-    echo "📊 Breeze ASR - ETL Pipeline"
-    echo "============================"
+    echo "📊 Breeze ASR - ETL Pipeline (含 UVR5 人聲分離)"
+    echo "============================================"
     echo ""
     echo "請選擇功能："
     echo "1. 🚀 智慧一條龍處理 (Smart Auto Process)"
-    echo "2. 📥 Extract - 處理集數 (Process Episodes)"
-    echo "3. 🔄 Transform - 處理並切分 (Process & Split)"
-    echo "4. 📤 Load - 切分訓練/測試集 (Split Dataset)"
+    echo "2. 📥 處理集數 (Process Episodes)"
+    echo "3. 🔄 處理並切分 (Process & Split)"
+    echo "4. 📤 切分訓練/測試集 (Split Dataset)"
     echo "5. 📊 狀態查看 (View Status)"
     echo "6. 🧹 清理數據 (Clean Data)" 
     echo "7. 🤖 模型管理 (Model Management)"
     echo "8. ⚙️ 設定管理 (Settings)"
     echo "9. 🗄️ 資料庫管理 (Database Management)"
+    echo "10. 🎵 UVR5 人聲分離 (去背景音) (UVR5 Vocal Separation)"
     echo "0. 離開 (Exit)"
     echo ""
-    echo -n "請輸入選項 [0-9]: "
+    echo -n "請輸入選項 [0-10]: "
 }
 
 # Main loop
@@ -140,6 +201,9 @@ main() {
                 ;;
             9)
                 show_database_menu
+                ;;
+            10)
+                show_uvr5_menu
                 ;;
             0)
                 echo ""

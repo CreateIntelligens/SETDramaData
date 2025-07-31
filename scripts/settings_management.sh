@@ -44,10 +44,11 @@ show_settings_menu() {
         echo "2. 設定目錄路徑 (Configure Directory Paths)"
         echo "3. 設定Embedding參數 (Configure Embedding)"
         echo "4. 設定處理模式 (Configure Processing Mode)"
-        echo "5. 重置為預設值 (Reset to Defaults)"
-        echo "6. 返回主選單 (Back to Main Menu)"
+        echo "5. 🎵 設定UVR5人聲分離 (Configure UVR5 Vocal Separation)"
+        echo "6. 重置為預設值 (Reset to Defaults)"
+        echo "7. 返回主選單 (Back to Main Menu)"
         echo ""
-        echo -n "請選擇 [1-6]: "
+        echo -n "請選擇 [1-7]: "
         read choice
         
         case "$choice" in
@@ -64,9 +65,12 @@ show_settings_menu() {
                 configure_processing_mode
                 ;;
             5)
-                reset_to_defaults
+                configure_uvr5_settings
                 ;;
             6)
+                reset_to_defaults
+                ;;
+            7)
                 return
                 ;;
             *)
@@ -340,4 +344,169 @@ reset_to_defaults() {
     echo "   測試集比例: 0.2"
     
     pause_for_input
+}
+
+# =============================================================================
+# UVR5 人聲分離設定管理
+# =============================================================================
+configure_uvr5_settings() {
+    while true; do
+        echo ""
+        echo "🎵 UVR5 人聲分離設定"
+        echo "==================="
+        echo ""
+        echo "📋 目前設定:"
+        echo "  模型路徑: ${UVR5_MODEL_PATH:-models/uvr5}"
+        echo "  模型檔案: ${UVR5_VOCAL_MODEL:-model_bs_roformer_ep_317_sdr_12.9755.ckpt}"
+        echo "  處理設備: ${UVR5_DEVICE:-auto}"
+        echo "  批次大小: ${UVR5_BATCH_SIZE:-1}"
+        echo ""
+        echo "⚙️ 請選擇要設定的項目："
+        echo "1. 📁 設定模型路徑"
+        echo "2. 🎵 選擇模型檔案"
+        echo "3. 🎮 設定處理設備"
+        echo "4. 📊 設定批次大小"
+        echo "5. 🔍 檢查 UVR5 環境"
+        echo "6. ↩️  返回設定選單"
+        echo ""
+        echo -n "請選擇 [1-6]: "
+        read uvr5_choice
+        
+        case "$uvr5_choice" in
+            1)
+                echo ""
+                echo "目前模型路徑: ${UVR5_MODEL_PATH:-models/uvr5}"
+                echo -n "請輸入新的模型路徑: "
+                read new_model_path
+                
+                if [ -n "$new_model_path" ]; then
+                    # 創建目錄（如果不存在）
+                    mkdir -p "$new_model_path"
+                    update_env_setting "UVR5_MODEL_PATH" "$new_model_path"
+                    echo "✅ 已更新模型路徑: $new_model_path"
+                else
+                    echo "❌ 路徑不能為空"
+                fi
+                
+                pause_for_input
+                # 重新載入環境變數
+                if [ -f ".env" ]; then
+                    set -a; source .env; set +a
+                fi
+                ;;
+            2)
+                echo ""
+                local model_path="${UVR5_MODEL_PATH:-models/uvr5}"
+                echo "掃描模型目錄: $model_path"
+                
+                if [ -d "$model_path" ]; then
+                    echo "可用模型:"
+                    local models=($(find "$model_path" -name "*.ckpt" -o -name "*.pth" -o -name "*.pt" 2>/dev/null | xargs -I {} basename {}))
+                    
+                    if [ ${#models[@]} -eq 0 ]; then
+                        echo "❌ 未找到模型檔案"
+                        echo "請將 UVR5 模型檔案 (.ckpt, .pth, .pt) 放置到 $model_path 目錄"
+                    else
+                        for i in "${!models[@]}"; do
+                            echo "  $((i+1)). ${models[i]}"
+                        done
+                        
+                        echo ""
+                        echo -n "請選擇模型 [1-${#models[@]}] 或按 Enter 跳過: "
+                        read model_choice
+                        
+                        if [[ "$model_choice" =~ ^[0-9]+$ ]] && [ "$model_choice" -ge 1 ] && [ "$model_choice" -le ${#models[@]} ]; then
+                            local selected_model="${models[$((model_choice-1))]}"
+                            update_env_setting "UVR5_VOCAL_MODEL" "$selected_model"
+                            echo "✅ 已選擇模型: $selected_model"
+                        fi
+                    fi
+                else
+                    echo "❌ 模型目錄不存在: $model_path"
+                fi
+                
+                pause_for_input
+                # 重新載入環境變數
+                if [ -f ".env" ]; then
+                    set -a; source .env; set +a
+                fi
+                ;;
+            3)
+                echo ""
+                echo "目前設備: ${UVR5_DEVICE:-auto}"
+                echo "可用選項:"
+                echo "  1. auto - 自動選擇 (有 GPU 就用 GPU，沒有就用 CPU)"
+                echo "  2. cuda - 強制使用 GPU"
+                echo "  3. cpu  - 強制使用 CPU"
+                echo ""
+                echo -n "請選擇設備 [1-3]: "
+                read device_choice
+                
+                case "$device_choice" in
+                    1)
+                        update_env_setting "UVR5_DEVICE" "auto"
+                        echo "✅ 已設定為自動選擇設備"
+                        ;;
+                    2)
+                        update_env_setting "UVR5_DEVICE" "cuda"
+                        echo "✅ 已設定為強制使用 GPU"
+                        ;;
+                    3)
+                        update_env_setting "UVR5_DEVICE" "cpu"
+                        echo "✅ 已設定為強制使用 CPU"
+                        ;;
+                    *)
+                        echo "❌ 無效選擇"
+                        ;;
+                esac
+                
+                pause_for_input
+                # 重新載入環境變數
+                if [ -f ".env" ]; then
+                    set -a; source .env; set +a
+                fi
+                ;;
+            4)
+                echo ""
+                echo "目前批次大小: ${UVR5_BATCH_SIZE:-1}"
+                echo "💡 建議值: 1 (節省記憶體)，如有大量 GPU 記憶體可設定更大值"
+                echo -n "請輸入批次大小 [1-16]: "
+                read batch_size
+                
+                if [[ "$batch_size" =~ ^[0-9]+$ ]] && [ "$batch_size" -ge 1 ] && [ "$batch_size" -le 16 ]; then
+                    update_env_setting "UVR5_BATCH_SIZE" "$batch_size"
+                    echo "✅ 已設定批次大小: $batch_size"
+                else
+                    echo "❌ 請輸入 1-16 之間的數字"
+                fi
+                
+                pause_for_input
+                # 重新載入環境變數
+                if [ -f ".env" ]; then
+                    set -a; source .env; set +a
+                fi
+                ;;
+            5)
+                echo ""
+                echo "🔍 檢查 UVR5 環境..."
+                
+                # 載入 UVR5 工具函數
+                if [ -f "scripts/uvr5_utils.sh" ]; then
+                    source "scripts/uvr5_utils.sh"
+                    check_uvr5_environment
+                else
+                    echo "❌ UVR5 工具腳本不存在"
+                fi
+                
+                pause_for_input
+                ;;
+            6)
+                return
+                ;;
+            *)
+                echo "❌ 無效選項"
+                pause_for_input
+                ;;
+        esac
+    done
 }

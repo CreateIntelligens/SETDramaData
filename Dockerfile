@@ -27,11 +27,20 @@ RUN apt-get update -y --fix-missing && \
     unzip \
     sox \
     libsox-dev \
+    libavcodec-dev \
+    libavformat-dev \
+    libavutil-dev \
+    libavfilter-dev \
+    libavdevice-dev \
+    sysstat \
     && ln -sf /usr/bin/python3.11 /usr/bin/python \
     && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && git lfs install
+
+# Copy requirements first for better Docker layer caching
+COPY requirements.txt /tmp/requirements.txt
 
 # Install Python dependencies with CUDA 12.4 support
 RUN pip install --no-cache-dir --upgrade pip && \
@@ -39,17 +48,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     torch>=2.0.0 \
     torchaudio>=2.0.0 \
     --index-url https://download.pytorch.org/whl/cu124 && \
-    pip install --no-cache-dir \
-    pyannote.audio>=3.1.0 \
-    librosa>=0.10.0 \
-    soundfile>=0.12.0 \
-    numpy>=1.24.0 \
-    speechbrain>=0.5.0 \
-    asteroid-filterbanks>=0.4.0 \
-    huggingface-hub>=0.20.0 \
-    scipy>=1.10.0 \
-    resampy>=0.4.0 \
-    tqdm>=4.65.0
+    pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Pre-download pyannote model (requires HF token at build time)
 ARG HUGGINGFACE_TOKEN

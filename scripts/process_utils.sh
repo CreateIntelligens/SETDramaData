@@ -287,8 +287,8 @@ split_dataset() {
     echo "🔄 開始切分..."
     
     $python_cmd "src/split_dataset.py" \
-        "$processed_dir" \
-        --output_dir "$output_dir" \
+        --processed_dir "$processed_dir" \
+        --split_dir "$output_dir" \
         --test_ratio "$test_ratio"
     
     if [ $? -eq 0 ]; then
@@ -366,8 +366,8 @@ process_and_split() {
     fi
     
     $python_cmd "src/split_dataset.py" \
-        "$processed_dir" \
-        --output_dir "$split_dir" \
+        --processed_dir "$processed_dir" \
+        --split_dir "$split_dir" \
         --test_ratio "$test_ratio"
     
     if [ $? -eq 0 ]; then

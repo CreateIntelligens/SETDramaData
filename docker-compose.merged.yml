@@ -7,17 +7,18 @@ services:
         HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN}
     container_name: cosyvoice-etl-merged
     entrypoint: ["/usr/local/bin/activate-env"]
+    env_file:
+      - .env
     volumes:
       # Mount etl project
       - .:/workspace/etl
       # Mount data directories (create if not exist)
       - ./data:/workspace/data
       - ./output:/workspace/output
-      # Mount models directory for persistence
+      # Mount models directory for persistence (includes UVR5 models)
       - ./models:/workspace/models
+      - ./models:/workspace/etl/models
     environment:
-      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
-      - HF_TOKEN=${HUGGINGFACE_TOKEN}
       - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
     stdin_open: true
     tty: true

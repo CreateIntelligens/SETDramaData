@@ -16,6 +16,8 @@ RUN apt-get install -y \
     python3.11 python3.11-dev python3-pip \
     git build-essential curl wget ffmpeg unzip git git-lfs sox libsox-dev \
     libsndfile1 libsndfile1-dev \
+    libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev \
+    sysstat \
     tmux nano vim htop tree \
     && ln -sf /usr/bin/python3.11 /usr/bin/python \
     && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
@@ -62,29 +64,16 @@ RUN conda activate ${VENV} && \
     --index-url https://download.pytorch.org/whl/cu124
 
 # ==================================================================
-# Install CosyVoice requirements (as base)
+# Install merged requirements (CosyVoice + Breeze ASR)
 # ------------------------------------------------------------------
-# Copy CosyVoice requirements
-COPY cosyvoice_docker/requirements.txt /tmp/cosyvoice_requirements.txt
+COPY requirements.merged.txt /tmp/requirements.merged.txt
 
-# Install CosyVoice dependencies first
+# Install all dependencies in one shot
 RUN conda activate ${VENV} && \
     pip install --retries 3 --timeout 300 \
     -i https://pypi.org/simple/ \
-    -r /tmp/cosyvoice_requirements.txt && \
-    rm /tmp/cosyvoice_requirements.txt
-
-# ==================================================================
-# Add Breeze ASR specific dependencies (minimal additions)
-# ------------------------------------------------------------------
-# Install only the additional packages needed for Breeze ASR
-RUN conda activate ${VENV} && \
-    pip install --retries 3 --timeout 300 \
-    -i https://pypi.org/simple/ \
-    pyannote.audio>=3.1.0 \
-    speechbrain>=0.5.0 \
-    asteroid-filterbanks>=0.4.0 \
-    resampy>=0.4.0
+    -r /tmp/requirements.merged.txt && \
+    rm /tmp/requirements.merged.txt
 
 # 離線環境不需要預下載模型，模型將透過掛載提供
 
@@ -104,6 +93,7 @@ ENV KMP_DUPLICATE_LIB_OK=TRUE
 ENV KMP_WARNINGS=FALSE
 ENV TORCH_WARN=0
 ENV PYTORCH_DISABLE_WARNINGS=1
+
 
 # Create activation script for easier use (as root before switching user)
 RUN echo '#!/bin/bash' > /usr/local/bin/activate-env && \

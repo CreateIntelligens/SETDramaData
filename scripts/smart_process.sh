@@ -117,10 +117,97 @@ print('yes' if $episode_num in processed else 'no')
     echo "📝 字幕: $(basename "$subtitle_file")"
     echo ""
     
-    # 執行處理（使用 .env 中的參數）
+    # 檢查是否啟用 UVR5 去背
+    local enable_uvr5="${ENABLE_UVR5_SEPARATION:-false}"
+    local processed_audio_file="$audio_file"
+    
+    if [ "$enable_uvr5" = "true" ]; then
+        echo "🎵 執行 UVR5 音頻去背..."
+        
+        local uvr5_output_dir="${UVR5_OUTPUT_DIR:-data/separated_vocals}"
+        local uvr5_model="${UVR5_MODEL:-model_bs_roformer_ep_317_sdr_12.9755.ckpt}"
+        
+        # 創建 UVR5 輸出目錄
+        mkdir -p "$uvr5_output_dir"
+        
+        # 執行 UVR5 去背
+        if $python_cmd -c "
+import sys
+sys.path.append('src')
+from uvr5_vocal_separator import create_vocal_separator
+import os
+
+separator = create_vocal_separator(
+    models_dir='${UVR5_MODELS_DIR:-models/uvr5}',
+    output_dir='$uvr5_output_dir',
+    use_gpu=True
+)
+
+try:
+    separator.initialize_separator('$uvr5_model')
+    result = separator.separate_vocals('$audio_file', 'episode_${episode_num}')
+    
+    if result['success']:
+        vocals_file = result['output_files'].get('vocals')
+        if vocals_file and os.path.exists(vocals_file):
+            print(f'SUCCESS:{vocals_file}')
+        else:
+            print('ERROR:人聲文件生成失敗')
+    else:
+        print(f'ERROR:{result.get(\"error\", \"未知錯誤\")}')
+finally:
+    separator.cleanup()
+" 2>/dev/null; then
+            # 解析結果
+            local uvr5_output=$(${python_cmd} -c "
+import sys
+sys.path.append('src')
+from uvr5_vocal_separator import create_vocal_separator
+import os
+
+separator = create_vocal_separator(
+    models_dir='${UVR5_MODELS_DIR:-models/uvr5}',
+    output_dir='$uvr5_output_dir',
+    use_gpu=True
+)
+
+try:
+    separator.initialize_separator('$uvr5_model')
+    result = separator.separate_vocals('$audio_file', 'episode_${episode_num}')
+    
+    if result['success']:
+        vocals_file = result['output_files'].get('vocals')
+        if vocals_file and os.path.exists(vocals_file):
+            print(f'SUCCESS:{vocals_file}')
+        else:
+            print('ERROR:人聲文件生成失敗')
+    else:
+        print(f'ERROR:{result.get(\"error\", \"未知錯誤\")}')
+finally:
+    separator.cleanup()
+" 2>/dev/null)
+            
+            if [[ "$uvr5_output" == SUCCESS:* ]]; then
+                processed_audio_file="${uvr5_output#SUCCESS:}"
+                echo "✅ UVR5 去背完成: $(basename "$processed_audio_file")"
+            else
+                echo "❌ UVR5 去背失敗: ${uvr5_output#ERROR:}"
+                echo "⚠️  將使用原始音檔繼續處理"
+                processed_audio_file="$audio_file"
+            fi
+        else
+            echo "❌ UVR5 去背執行失敗"
+            echo "⚠️  將使用原始音檔繼續處理"
+            processed_audio_file="$audio_file"
+        fi
+        echo ""
+    fi
+    
+    # 執行 pyannote 處理（使用 .env 中的參數）
     echo "🚀 執行 pyannote 處理..."
+    echo "🎵 使用音檔: $(basename "$processed_audio_file")"
     if $python_cmd "src/pyannote_speaker_segmentation.py" \
-        "$audio_file" "$subtitle_file" \
+        "$processed_audio_file" "$subtitle_file" \
         --episode_num "$episode_num" \
         --output_dir "$output_dir"; then
         echo "✅ 處理完成"
@@ -131,6 +218,53 @@ print('yes' if $episode_num in processed else 'no')
     
     echo ""
     echo "✅ 第 $episode_num 集處理完成！"
+    
+    return 0
+}
+
+# 智慧處理單集（包含切分）
+smart_process_episode() {
+    local episode_num="$1"
+    
+    if [ -z "$episode_num" ]; then
+        echo "❌ 請提供集數"
+        echo "用法: smart_process_episode <集數>"
+        return 1
+    fi
+    
+    # 先執行處理
+    if ! smart_process_episode_only "$episode_num"; then
+        echo "❌ 第 $episode_num 集處理失敗"
+        return 1
+    fi
+    
+    # 執行切分
+    echo ""
+    echo "📊 開始切分第 $episode_num 集..."
+    
+    local python_cmd=$(detect_python)
+    if [ -z "$python_cmd" ]; then
+        echo "❌ 找不到 Python"
+        return 1
+    fi
+    
+    local output_dir="${DEFAULT_PROCESSED_DIR:-data/output}"
+    local split_dir="${DEFAULT_SPLIT_DIR:-data/split_dataset}"
+    local test_ratio="${DEFAULT_TEST_RATIO:-0.2}"
+    
+    if $python_cmd "src/split_dataset.py" \
+        --input_dir "$output_dir" \
+        --output_dir "$split_dir" \
+        --episode_num "$episode_num" \
+        --test_ratio "$test_ratio"; then
+        echo "✅ 切分完成"
+    else
+        echo "❌ 切分失敗"
+        return 1
+    fi
+    
+    echo ""
+    echo "✅ 第 $episode_num 集完整處理（包含切分）完成！"
     
     return 0
 }
