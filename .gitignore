@@ -5,6 +5,7 @@ poetry.lock
 docs/
 speakers.db
 debug_log.txt
+debug.log
 .python-version
 願望(音軌及字幕檔)
 data/
@@ -46,3 +47,5 @@ models/huggingface/*/snapshots/*/
 # OS-specific files
 .DS_Store
 Thumbs.db
+data/temp/
+*.log

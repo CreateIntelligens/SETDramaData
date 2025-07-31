@@ -151,6 +151,9 @@ class EmbeddingInference:
                 project_root = Path(__file__).parent.parent
                 model_path = project_root / "models" / "pyannote_model_wespeaker-voxceleb-resnet34-LM.bin"
                 
+                print(f"🔍 檢查模型路徑: {model_path}")
+                print(f"🔍 模型檔案存在: {model_path.exists()}")
+                
                 if model_path.exists():
                     print(f"📁 載入正規離線模型: {model_path}")
                     try:
@@ -162,6 +165,8 @@ class EmbeddingInference:
                         return
                     except Exception as e:
                         print(f"⚠️ 直接載入 .bin 檔案失敗: {e}")
+                        import traceback
+                        print(f"錯誤詳情: {traceback.format_exc()}")
                         # 繼續使用備用方法
             
             # 最後的備用方法
@@ -304,7 +309,8 @@ def segment_audio_files(segments, audio_path, output_dir, subtitles, episode_num
     os.makedirs(output_dir, exist_ok=True)
     saved_count = 0
 
-    for i, (start, end, speaker_id) in enumerate(tqdm(segments, desc="儲存片段")):
+    progress_bar = tqdm(segments, desc="儲存片段", disable=not sys.stdout.isatty())
+    for i, (start, end, speaker_id) in enumerate(progress_bar):
         try:
             start_sample = int(start * sr)
             end_sample = int(end * sr)

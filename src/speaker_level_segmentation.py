@@ -207,14 +207,14 @@ def extract_embedding_from_audio(
         
         # 確保音檔是正確格式 (16kHz, mono)
         if len(audio_data.shape) > 1:
-            audio_data = audio_data.mean(axis=1)  # 轉為單聲道
+            audio_data = audio_data.mean(axis=1)
             
         # 轉換為 PyTorch tensor
         audio_tensor = torch.from_numpy(audio_data).float()
         
-        # 添加批次維度
+        # 為 PyannoteAudio 模型添加正確的維度 [batch, channels, samples]
         if len(audio_tensor.shape) == 1:
-            audio_tensor = audio_tensor.unsqueeze(0)  # [1, samples]
+            audio_tensor = audio_tensor.unsqueeze(0).unsqueeze(0)  # [1, 1, samples]
         
         # 移動到正確設備
         audio_tensor = audio_tensor.to(device)
@@ -223,24 +223,24 @@ def extract_embedding_from_audio(
         with torch.no_grad():
             embedding = embedding_model(audio_tensor)
             
-        # 轉換回 numpy
+        # 轉換為 numpy
         if isinstance(embedding, torch.Tensor):
             embedding = embedding.cpu().numpy()
-            
+        
         # 確保是一維向量
         if len(embedding.shape) > 1:
             embedding = embedding.squeeze()
             
-        print(f"         ✅ 真實 embedding 提取成功，維度: {embedding.shape}")
+        print(f"         ✅ embedding 提取成功，維度: {embedding.shape}")
         return embedding.astype(np.float32)
         
     except Exception as e:
         print(f"       ❌ Embedding 提取錯誤: {e}")
-        # 出錯時返回隨機 embedding 以避免系統崩潰
-        embedding_dim = 512
-        fake_embedding = np.random.randn(embedding_dim).astype(np.float32)
-        print(f"       🔄 使用隨機 embedding 代替，維度: {fake_embedding.shape}")
-        return fake_embedding
+        print(f"       ❌ 無法提取有效 embedding，跳過此說話人")
+        import traceback
+        print(f"       🔍 詳細錯誤: {traceback.format_exc()}")
+        # 不再返回隨機 embedding，而是返回 None
+        return None
 
 
 def assign_global_speaker_ids_by_embedding(
@@ -258,6 +258,15 @@ def assign_global_speaker_ids_by_embedding(
     print(f"   🎯 為 {len(speaker_embeddings)} 個說話人分配 Global Speaker ID")
     print(f"   🔍 相似度閾值: {similarity_threshold}")
     
+    # 檢查該集數是否已處理過
+    processed_episodes = db.get_processed_episodes()
+    episode_already_processed = episode_num in processed_episodes
+    
+    if episode_already_processed:
+        print(f"   ⚠️ 集數 {episode_num} 已處理過，將優先匹配該集數現有說話人")
+        existing_mapping = db.get_episode_speaker_mapping(episode_num)
+        print(f"   📋 該集數現有說話人對應: {existing_mapping}")
+    
     for local_speaker, embedding in speaker_embeddings.items():
         segments = speaker_segments[local_speaker]
         total_duration = calculate_total_duration(segments)
@@ -266,6 +275,15 @@ def assign_global_speaker_ids_by_embedding(
         print(f"     處理說話人 {local_speaker}: {segment_count} 個片段, 總時長 {total_duration:.1f}s")
         
         try:
+            # 如果該集數已處理過，優先檢查是否為該集數的現有說話人
+            if episode_already_processed and local_speaker in existing_mapping:
+                speaker_id = existing_mapping[local_speaker]
+                print(f"       🔄 重複處理：匹配到該集數現有說話人 Global ID {speaker_id}")
+                # 更新說話人在此集數的出現記錄
+                db.update_speaker_episode(speaker_id, episode_num, local_speaker, segment_count)
+                local_to_global_map[local_speaker] = speaker_id
+                continue
+            
             # 檢查是否啟用 embedding 更新
             update_embeddings = os.getenv("UPDATE_SPEAKER_EMBEDDINGS", "false").lower() == "true"
             update_weight = float(os.getenv("EMBEDDING_UPDATE_WEIGHT", "1.0"))

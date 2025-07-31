@@ -137,7 +137,10 @@ class SpeakerDatabase:
             cursor.execute("SELECT speaker_id, embedding, embedding_dim FROM speakers")
             speakers = cursor.fetchall()
             
+            print(f"       🔍 資料庫中有 {len(speakers)} 個說話人進行比對")
+            
             if not speakers:
+                print(f"       ⚠️ 資料庫為空，無法進行匹配")
                 return None, 0.0
             
             # Ensure input embedding is float32
@@ -146,6 +149,7 @@ class SpeakerDatabase:
             
             max_similarity = 0.0
             best_speaker_id = None
+            similarity_details = []
             
             # Compare with each stored speaker
             for speaker_id, embedding_bytes, embedding_dim in speakers:
@@ -161,18 +165,28 @@ class SpeakerDatabase:
                     similarity_np = similarity_tensor.squeeze().cpu().numpy()
                     similarity = float(similarity_np.flatten()[0])
                 
+                similarity_details.append((speaker_id, similarity))
+                
                 if similarity > max_similarity:
                     max_similarity = similarity
                     best_speaker_id = speaker_id
             
+            # 顯示所有相似度詳情
+            print(f"       📊 相似度詳情 (閾值: {similarity_threshold:.3f}):")
+            for speaker_id, sim in sorted(similarity_details, key=lambda x: x[1], reverse=True)[:5]:
+                status = "✅ 匹配" if sim > similarity_threshold else "❌ 未達閾值"
+                print(f"         Speaker {speaker_id}: {sim:.3f} {status}")
+            
             if max_similarity > similarity_threshold:
-                print(f"   🔍 Match found! Speaker is likely Global Speaker ID: {best_speaker_id} (Similarity: {max_similarity:.3f})")
+                print(f"       🎯 匹配成功! Global Speaker ID: {best_speaker_id} (相似度: {max_similarity:.3f})")
                 
                 # Update embedding if requested
                 if update_embedding and best_speaker_id is not None:
                     self.update_speaker_embedding(best_speaker_id, embedding, update_weight)
                 
                 return best_speaker_id, max_similarity
+            else:
+                print(f"       ❌ 無匹配說話人 (最高相似度: {max_similarity:.3f} < 閾值: {similarity_threshold:.3f})")
             
             return None, max_similarity
     

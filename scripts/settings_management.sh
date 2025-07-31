@@ -360,16 +360,18 @@ configure_uvr5_settings() {
         echo "  模型檔案: ${UVR5_VOCAL_MODEL:-model_bs_roformer_ep_317_sdr_12.9755.ckpt}"
         echo "  處理設備: ${UVR5_DEVICE:-auto}"
         echo "  批次大小: ${UVR5_BATCH_SIZE:-1}"
+        echo "  並行執行緒: ${UVR5_MAX_WORKERS:-1} $([ "${UVR5_MAX_WORKERS:-1}" -gt 1 ] && echo '(多執行緒模式)' || echo '(單執行緒模式)')"
         echo ""
         echo "⚙️ 請選擇要設定的項目："
         echo "1. 📁 設定模型路徑"
         echo "2. 🎵 選擇模型檔案"
         echo "3. 🎮 設定處理設備"
         echo "4. 📊 設定批次大小"
-        echo "5. 🔍 檢查 UVR5 環境"
-        echo "6. ↩️  返回設定選單"
+        echo "5. 🚀 設定並行執行緒数"
+        echo "6. 🔍 檢查 UVR5 環境"
+        echo "7. ↩️  返回設定選單"
         echo ""
-        echo -n "請選擇 [1-6]: "
+        echo -n "請選擇 [1-7]: "
         read uvr5_choice
         
         case "$uvr5_choice" in
@@ -488,6 +490,34 @@ configure_uvr5_settings() {
                 ;;
             5)
                 echo ""
+                echo "目前並行執行緒: ${UVR5_MAX_WORKERS:-1}"
+                echo "💡 說明:"
+                echo "  1 = 單執行緒模式 (節省記憶體)"
+                echo "  2-4 = 多執行緒模式 (提升速度，需要更多 GPU 記憶體)"
+                echo "  建議值: 2-4 (根據 GPU 記憶體狀況)"
+                echo -n "請輸入並行執行緒數 [1-8]: "
+                read max_workers
+                
+                if [[ "$max_workers" =~ ^[0-9]+$ ]] && [ "$max_workers" -ge 1 ] && [ "$max_workers" -le 8 ]; then
+                    update_env_setting "UVR5_MAX_WORKERS" "$max_workers"
+                    if [ "$max_workers" -eq 1 ]; then
+                        echo "✅ 已設定為單執行緒模式: $max_workers"
+                    else
+                        echo "✅ 已設定為多執行緒模式: $max_workers 執行緒"
+                        echo "⚠️  注意: 多執行緒模式需要更多 GPU 記憶體"
+                    fi
+                else
+                    echo "❌ 請輸入 1-8 之間的數字"
+                fi
+                
+                pause_for_input
+                # 重新載入環境變數
+                if [ -f ".env" ]; then
+                    set -a; source .env; set +a
+                fi
+                ;;
+            6)
+                echo ""
                 echo "🔍 檢查 UVR5 環境..."
                 
                 # 載入 UVR5 工具函數
@@ -500,7 +530,7 @@ configure_uvr5_settings() {
                 
                 pause_for_input
                 ;;
-            6)
+            7)
                 return
                 ;;
             *)

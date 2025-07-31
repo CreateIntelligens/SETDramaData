@@ -12,12 +12,22 @@
 source "$(dirname "${BASH_SOURCE[0]}")/common_utils.sh"
 
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# 日誌檔案
+# -----------------------------------------------------------------------------
+UVR5_LOG_FILE="uvr5_processor.log"
+
+# -----------------------------------------------------------------------------
 # UVR5 配置參數
 # -----------------------------------------------------------------------------
 UVR5_MODEL_PATH="${UVR5_MODEL_PATH:-models/uvr5}"
 UVR5_VOCAL_MODEL="${UVR5_VOCAL_MODEL:-model_bs_roformer_ep_317_sdr_12.9755.ckpt}"
 UVR5_DEVICE="${UVR5_DEVICE:-auto}"
 UVR5_BATCH_SIZE="${UVR5_BATCH_SIZE:-1}"
+UVR5_MAX_WORKERS="${UVR5_MAX_WORKERS:-1}"
+UVR5_MIN_DURATION="${UVR5_MIN_DURATION:-10.0}"
+UVR5_TARGET_DURATION="${UVR5_TARGET_DURATION:-15.0}"
+UVR5_PROCESSING_TIMEOUT="${UVR5_PROCESSING_TIMEOUT:-300}"
 
 # -----------------------------------------------------------------------------
 # 核心函數
@@ -50,14 +60,15 @@ import sys
 sys.path.append('src')
 
 try:
-    from uvr5_processor import UVR5Processor
-    processor = UVR5Processor()
+    from uvr5_processor import ThreadedUVR5Processor
+    processor = ThreadedUVR5Processor(max_workers=$UVR5_MAX_WORKERS)
     model_info = processor.get_model_info()
     
     print('✅ UVR5 處理器可用')
     print(f'🎮 設備: {model_info[\"device\"]}')
     print(f'📁 模型路徑: {model_info[\"model_path\"]}')
     print(f'📊 批次大小: {model_info[\"batch_size\"]}')
+    print(f'🚀 並行執行緒: $UVR5_MAX_WORKERS')
     
     processor.cleanup()
     
@@ -67,7 +78,7 @@ except ImportError as e:
 except Exception as e:
     print(f'❌ UVR5 環境檢查失敗: {e}')
     exit(1)
-" 2>/dev/null; then
+" 2>> "$UVR5_LOG_FILE"; then
         echo "✅ UVR5 環境檢查完成"
         return 0
     else
@@ -104,24 +115,31 @@ uvr5_enhance_directory() {
     fi
     
     # 執行批量處理
+    # 將 shell 的 true/false 轉換為 Python 的 True/False
+    local backup_original_py=$( [[ "$backup_original" == "true" ]] && echo "True" || echo "False" )
+
     if $python_cmd -c "
 import sys
 sys.path.append('src')
 
-from uvr5_processor import UVR5Processor
+from uvr5_processor import ThreadedUVR5Processor
 
 try:
-    processor = UVR5Processor(
+    processor = ThreadedUVR5Processor(
+        max_workers=$UVR5_MAX_WORKERS,
         model_path='$UVR5_MODEL_PATH',
         vocal_model='$UVR5_VOCAL_MODEL',
         device='$UVR5_DEVICE',
-        batch_size=$UVR5_BATCH_SIZE
+        batch_size=$UVR5_BATCH_SIZE,
+        min_duration=$UVR5_MIN_DURATION,
+        target_duration=$UVR5_TARGET_DURATION,
+        processing_timeout=$UVR5_PROCESSING_TIMEOUT
     )
     
     result = processor.batch_enhance(
         input_dir='$input_dir',
         pattern='*.wav',
-        backup_original=$backup_original
+        backup_original=$backup_original_py
     )
     
     if result['success']:
@@ -136,11 +154,11 @@ try:
 finally:
     processor.cleanup()
 
-" 2>/dev/null; then
+" 2>> "$UVR5_LOG_FILE"; then
         echo "✅ 目錄 UVR5 人聲分離完成"
         return 0
     else
-        echo "❌ 目錄 UVR5 人聲分離失敗"
+        echo "❌ 目錄 UVR5 人聲分離失敗，請查看 ${UVR5_LOG_FILE} 以獲取詳細資訊。"
         return 1
     fi
 }
@@ -168,23 +186,30 @@ uvr5_enhance_split_dataset() {
     local python_cmd=$(detect_python)
     
     # 執行切分資料集處理
+    # 將 shell 的 true/false 轉換為 Python 的 True/False
+    local backup_original_py=$( [[ "$backup_original" == "true" ]] && echo "True" || echo "False" )
+
     if $python_cmd -c "
 import sys
 sys.path.append('src')
 
-from uvr5_processor import UVR5Processor
+from uvr5_processor import ThreadedUVR5Processor
 
 try:
-    processor = UVR5Processor(
+    processor = ThreadedUVR5Processor(
+        max_workers=$UVR5_MAX_WORKERS,
         model_path='$UVR5_MODEL_PATH',
         vocal_model='$UVR5_VOCAL_MODEL',
         device='$UVR5_DEVICE',
-        batch_size=$UVR5_BATCH_SIZE
+        batch_size=$UVR5_BATCH_SIZE,
+        min_duration=$UVR5_MIN_DURATION,
+        target_duration=$UVR5_TARGET_DURATION,
+        processing_timeout=$UVR5_PROCESSING_TIMEOUT
     )
     
     result = processor.enhance_split_dataset(
         split_dir='$split_dir',
-        backup_original=$backup_original
+        backup_original=$backup_original_py
     )
     
     if result['success']:
@@ -196,12 +221,12 @@ try:
 finally:
     processor.cleanup()
 
-" 2>/dev/null; then
+" 2>> "$UVR5_LOG_FILE"; then
         echo ""
         echo "🎉 切分資料集 UVR5 人聲分離完成！"
         return 0
     else
-        echo "❌ 切分資料集 UVR5 人聲分離失敗"
+        echo "❌ 切分資料集 UVR5 人聲分離失敗，請查看 ${UVR5_LOG_FILE} 以獲取詳細資訊。"
         return 1
     fi
 }
@@ -237,7 +262,7 @@ uvr5_test_single_file() {
     
     local output_file="$test_output_dir/$(basename "$input_file" .wav)_enhanced.wav"
     
-    # 執行單檔測試
+    # 執行單檔測試（單檔測試使用基本處理器）
     if $python_cmd -c "
 import sys
 sys.path.append('src')
@@ -248,7 +273,10 @@ try:
     processor = UVR5Processor(
         model_path='$UVR5_MODEL_PATH',
         vocal_model='$UVR5_VOCAL_MODEL',
-        device='$UVR5_DEVICE'
+        device='$UVR5_DEVICE',
+        min_duration=$UVR5_MIN_DURATION,
+        target_duration=$UVR5_TARGET_DURATION,
+        processing_timeout=$UVR5_PROCESSING_TIMEOUT
     )
     
     result = processor.enhance_audio(
@@ -270,7 +298,7 @@ try:
 finally:
     processor.cleanup()
 
-" 2>/dev/null; then
+" 2>> "$UVR5_LOG_FILE"; then
         echo ""
         echo "✅ UVR5 單檔測試完成"
         echo "📁 測試輸出: $output_file"
@@ -291,6 +319,10 @@ show_uvr5_status() {
     echo "  UVR5_VOCAL_MODEL: ${UVR5_VOCAL_MODEL:-model_bs_roformer_ep_317_sdr_12.9755.ckpt}"
     echo "  UVR5_DEVICE: ${UVR5_DEVICE:-auto}"
     echo "  UVR5_BATCH_SIZE: ${UVR5_BATCH_SIZE:-1}"
+    echo "  UVR5_MAX_WORKERS: ${UVR5_MAX_WORKERS:-1} $([ "${UVR5_MAX_WORKERS:-1}" -gt 1 ] && echo '(多執行緒模式)' || echo '(單執行緒模式)')"
+    echo "  UVR5_MIN_DURATION: ${UVR5_MIN_DURATION:-10.0}s (短音頻預處理闾值)"
+    echo "  UVR5_TARGET_DURATION: ${UVR5_TARGET_DURATION:-15.0}s (預處理目標長度)"
+    echo "  UVR5_PROCESSING_TIMEOUT: ${UVR5_PROCESSING_TIMEOUT:-300}s (處理超時時間)"
     echo ""
     
     # 檢查模型檔案
@@ -308,13 +340,13 @@ show_uvr5_status() {
         echo "🐍 Python: ✅ 可用 ($($python_cmd --version 2>&1))"
         
         # 檢查套件
-        if $python_cmd -c "import torch; print('✅ PyTorch:', torch.__version__)" 2>/dev/null; then
+        if $python_cmd -c "import torch; print('✅ PyTorch:', torch.__version__)" 2>> "$UVR5_LOG_FILE"; then
             echo "📦 PyTorch: ✅ 可用"
         else
             echo "📦 PyTorch: ❌ 不可用"
         fi
         
-        if $python_cmd -c "from audio_separator.separator import Separator; print('✅ audio-separator 可用')" 2>/dev/null; then
+        if $python_cmd -c "from audio_separator.separator import Separator; print('✅ audio-separator 可用')" 2>> "$UVR5_LOG_FILE"; then
             echo "📦 audio-separator: ✅ 可用"
         else
             echo "📦 audio-separator: ❌ 不可用 (請執行: pip install 'audio-separator[gpu]')"
@@ -327,6 +359,7 @@ show_uvr5_status() {
     echo "💡 使用建議:"
     echo "  UVR5 人聲分離功能可直接使用，透過 ETL 選單選項 10 進入"
     echo "  功能：從混合音頻中分離出純淨人聲，去除背景音樂"
+    echo "  🚀 多執行緒模式：設定 UVR5_MAX_WORKERS > 1 啟用並行處理"
 }
 
 # -----------------------------------------------------------------------------
@@ -365,7 +398,9 @@ show_uvr5_menu() {
                     backup_original="true"
                 fi
                 
-                uvr5_enhance_split_dataset "$split_dir" "$backup_original"
+                if ! uvr5_enhance_split_dataset "$split_dir" "$backup_original"; then
+                    echo "❌ UVR5 處理失敗，請檢查日誌以獲取更多資訊。"
+                fi
                 pause_for_input
                 ;;
             2)
@@ -385,7 +420,9 @@ show_uvr5_menu() {
                     backup_original="true"
                 fi
                 
-                uvr5_enhance_directory "$input_dir" "$backup_original"
+                if ! uvr5_enhance_directory "$input_dir" "$backup_original"; then
+                    echo "❌ UVR5 處理失敗，請檢查日誌以獲取更多資訊。"
+                fi
                 pause_for_input
                 ;;
             3)

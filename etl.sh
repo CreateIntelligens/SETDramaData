@@ -95,7 +95,9 @@ smart_process_menu() {
                     if [[ ! "$confirm_uvr5" =~ ^[Nn]$ ]]; then
                         # 檢查 UVR5 環境
                         if check_uvr5_environment >/dev/null 2>&1; then
-                            uvr5_enhance_split_dataset "data/split_dataset" "false"
+                            if ! uvr5_enhance_split_dataset "data/split_dataset" "false"; then
+                                echo "❌ UVR5 處理失敗，請檢查日誌以獲取更多資訊。"
+                            fi
                         else
                             echo "❌ UVR5 環境未準備就緒"
                             echo "請先檢查 UVR5 設定和模型檔案"

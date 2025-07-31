@@ -101,7 +101,7 @@ print('yes' if $episode_num in processed else 'no')
     fi
     
     local audio_file=$(find "$input_dir" -path "*${episode_pattern}*" \( -name "*.wav" -o -name "*.mp3" -o -name "*.m4a" -o -name "*.flac" \) | head -1)
-    local subtitle_file=$(find "$input_dir" -name "$subtitle_pattern")
+    local subtitle_file=$(find "$input_dir" -name "$subtitle_pattern" | head -1)
     
     if [ -z "$audio_file" ]; then
         echo "❌ 找不到第 $episode_num 集的音檔"

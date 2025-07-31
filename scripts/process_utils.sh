@@ -86,7 +86,7 @@ process_single_episode() {
         subtitle_pattern="願望-${episode_num}.txt"
     fi
     
-    local subtitle_file=$(find "$input_dir" -name "$subtitle_pattern")
+    local subtitle_file=$(find "$input_dir" -name "$subtitle_pattern" | head -1)
     
     if [ -z "$subtitle_file" ]; then
         echo "❌ 找不到集數 $episode_num 的字幕檔案: $subtitle_pattern"
@@ -136,7 +136,7 @@ process_single_episode() {
             --output_dir "$output_dir" \
             --force \
             $verification_args \
-            $segmentation_args > debug_log.txt 2>&1
+            $segmentation_args > debug.log 2>&1
         
         if [ $? -eq 0 ]; then
             echo "✅ 完成: $(basename "$audio_file")"
