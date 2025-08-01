@@ -9,7 +9,7 @@ debug.log
 .python-version
 願望(音軌及字幕檔)
 data/
-models/uvr5/
+models/uvr5/*
 
 # Python artifacts
 __pycache__/
