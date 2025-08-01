@@ -112,7 +112,7 @@ class UVR5Processor:
         log_file = Path.cwd() / 'uvr5_processor.log'
         
         logging.basicConfig(
-            level=logging.INFO,
+            level=logging.DEBUG,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             handlers=[
                 logging.FileHandler(log_file, encoding='utf-8'),
@@ -153,6 +153,7 @@ class UVR5Processor:
             self.separator = Separator(
                 log_level=logging.WARNING,  # 減少 UVR5 日誌輸出
                 model_file_dir=str(self.model_path),
+                output_dir=str(self.temp_dir),  # 預設使用專用暫存目錄
                 output_format='WAV',
                 # 針對短音檔調整 MDX 參數
                 mdx_params={
@@ -189,7 +190,7 @@ class UVR5Processor:
             return 0.0
     
     def pad_audio_for_uvr5(self, input_path: str) -> Optional[str]:
-        """為短音頻檔案進行補零預處理
+        """為短音頻檔案進行補零預處理，並統一音頻格式
         
         Args:
             input_path: 輸入音頻檔案路徑
@@ -205,47 +206,70 @@ class UVR5Processor:
                 self.logger.warning(f"⚠️  無效的音頻檔案: {input_path}")
                 return None
             
-            # 如果音頻長度足夠，不需要預處理
-            if duration >= self.min_duration:
-                return None
-            
-            self.logger.info(f"📏 音頻長度 {duration:.2f}s < {self.min_duration}s，執行補零預處理...")
-            
             # 載入音頻
             waveform, sample_rate = torchaudio.load(input_path)
             
-            # 計算需要的總樣本數
-            target_samples = int(self.target_duration * sample_rate)
-            current_samples = waveform.shape[1]
+            # 檢查是否需要格式標準化
+            needs_format_fix = False
+            target_sample_rate = 44100  # UVR5 偏好的採樣率
             
-            if current_samples >= target_samples:
-                return None  # 不需要補零
+            # 轉換為單聲道（如果是立體聲）
+            if waveform.shape[0] > 1:
+                waveform = torch.mean(waveform, dim=0, keepdim=True)
+                needs_format_fix = True
+                self.logger.info(f"🔄 轉換立體聲為單聲道")
             
-            # 計算需要補零的樣本數
-            padding_samples = target_samples - current_samples
+            # 重採樣到目標採樣率
+            if sample_rate != target_sample_rate:
+                resampler = torchaudio.transforms.Resample(sample_rate, target_sample_rate)
+                waveform = resampler(waveform)
+                sample_rate = target_sample_rate
+                needs_format_fix = True
+                self.logger.info(f"🔄 重採樣: {sample_rate}Hz → {target_sample_rate}Hz")
             
-            # 前後補零（平均分配）
-            padding_before = padding_samples // 2
-            padding_after = padding_samples - padding_before
+            # 檢查是否需要補零
+            needs_padding = duration < self.min_duration
             
-            # 創建補零後的音頻
-            padded_waveform = torch.nn.functional.pad(waveform, 
-                                                    (padding_before, padding_after), 
-                                                    'constant', 0)
+            if needs_padding:
+                self.logger.info(f"📏 音頻長度 {duration:.2f}s < {self.min_duration}s，執行補零預處理...")
+                
+                # 計算需要的總樣本數
+                target_samples = int(self.target_duration * sample_rate)
+                current_samples = waveform.shape[1]
+                
+                if current_samples < target_samples:
+                    # 計算需要補零的樣本數
+                    padding_samples = target_samples - current_samples
+                    
+                    # 前後補零（平均分配）
+                    padding_before = padding_samples // 2
+                    padding_after = padding_samples - padding_before
+                    
+                    # 創建補零後的音頻
+                    waveform = torch.nn.functional.pad(waveform, 
+                                                        (padding_before, padding_after), 
+                                                        'constant', 0)
             
-            # 創建臨時檔案於專用暫存目錄
-            input_path_obj = Path(input_path)
-            temp_filename = f"padded_{int(time.time())}_{input_path_obj.name}"
-            temp_path = self.temp_dir / temp_filename
-            
-            # 保存補零後的音頻
-            torchaudio.save(str(temp_path), padded_waveform, sample_rate)
-            
-            self.logger.info(f"✅ 音頻補零完成: {duration:.2f}s → {self.target_duration:.2f}s")
-            return str(temp_path)
+            # 如果需要任何預處理，創建臨時檔案
+            if needs_format_fix or needs_padding:
+                input_path_obj = Path(input_path)
+                temp_filename = f"processed_{int(time.time())}_{input_path_obj.name}"
+                temp_path = self.temp_dir / temp_filename
+                
+                # 保存預處理後的音頻
+                torchaudio.save(str(temp_path), waveform, sample_rate)
+                
+                if needs_padding:
+                    self.logger.info(f"✅ 音頻補零完成: {duration:.2f}s → {self.target_duration:.2f}s")
+                else:
+                    self.logger.info(f"✅ 音頻格式標準化完成")
+                
+                return str(temp_path)
+            else:
+                return None  # 不需要預處理
             
         except Exception as e:
-            self.logger.error(f"❌ 音頻補零失敗 {input_path}: {e}")
+            self.logger.error(f"❌ 音頻預處理失敗 {input_path}: {e}")
             return None
     
     def enhance_audio(self, input_path: str, output_path: Optional[str] = None, 
@@ -297,32 +321,103 @@ class UVR5Processor:
         
         try:
             # --- 主要處理邏輯 ---
-            if original_duration > 0 and original_duration < self.min_duration:
-                preprocessed_file = self.pad_audio_for_uvr5(str(input_path))
-                if preprocessed_file:
-                    actual_input_path = Path(preprocessed_file)
-                    result['preprocessed'] = True
-                else:
-                    self.logger.warning(f"⚠️  音頻預處理失敗，使用原始檔案: {input_path.name}")
+            # 所有音檔都需要格式檢查和標準化（不只是短音檔）
+            preprocessed_file = self.pad_audio_for_uvr5(str(input_path))
+            if preprocessed_file:
+                actual_input_path = Path(preprocessed_file)
+                result['preprocessed'] = True
+            else:
+                self.logger.debug(f"ℹ️  音頻無需預處理: {input_path.name}")
 
             if backup_original and output_path == input_path:
-                backup_path = input_path.with_suffix(f'.backup{input_path.suffix}')
-                input_path.rename(backup_path)
-                input_path = backup_path
-                result['backup_file'] = str(backup_path)
+                backup_path = input_path.with_suffix('.bak')
+                
+                # 檢查是否已存在備份檔案
+                if backup_path.exists():
+                    self.logger.info(f"ℹ️  備份檔案已存在，跳過備份: {backup_path.name}")
+                    result['backup_skipped'] = True
+                    result['backup_file'] = str(backup_path)
+                    # 備份檔案已存在，使用備份檔案進行處理
+                    if not preprocessed_file:
+                        actual_input_path = backup_path
+                else:
+                    input_path.rename(backup_path)
+                    input_path = backup_path
+                    result['backup_file'] = str(backup_path)
+                    self.logger.info(f"💾 已備份原始檔案: {backup_path.name}")
+                    
+                    # 更新actual_input_path，如果之前是預處理檔案則不變，否則更新為備份檔案
+                    if not preprocessed_file:
+                        actual_input_path = backup_path
 
-            temp_output_dir = output_path.parent / f"temp_uvr5_{int(time.time())}"
+            # 使用專用暫存目錄，避免在根目錄產生散落檔案
+            temp_output_dir = self.temp_dir / f"uvr5_processing_{int(time.time())}"
             temp_output_dir.mkdir(exist_ok=True)
             
             self.separator.output_dir = str(temp_output_dir)
             output_files = self.separator.separate(str(actual_input_path))
             
-            vocals_file = next((Path(f) for f in output_files if 'vocals' in Path(f).name.lower()), None)
+            # 除錯：記錄返回的檔案列表
+            self.logger.info(f"🔍 分離器回傳檔案列表: {output_files}")
+            for f in output_files:
+                # 檢查兩個可能的位置
+                file_path1 = temp_output_dir / f
+                file_path2 = self.temp_dir / f
+                self.logger.info(f"  📁 檔案: {f}")
+                self.logger.info(f"    位置1 {temp_output_dir}: {file_path1.exists()}")
+                self.logger.info(f"    位置2 {self.temp_dir}: {file_path2.exists()}")
             
-            if vocals_file and vocals_file.exists():
-                shutil.move(str(vocals_file), str(output_path))
-                result['enhanced'] = True
-                self.logger.info(f"✅ 人聲分離完成: {input_path.name} (原始: {original_duration:.2f}s)")
+            vocals_file = next((f for f in output_files if 'vocals' in Path(f).name.lower() or '(vocals)' in Path(f).name.lower()), None)
+            self.logger.info(f"🎤 找到的 Vocals 檔案: {vocals_file}")
+            
+            if vocals_file:
+                # 檢查兩個可能的位置
+                vocals_path1 = temp_output_dir / vocals_file
+                vocals_path2 = self.temp_dir / vocals_file
+                
+                if vocals_path1.exists():
+                    vocals_path = vocals_path1
+                    self.logger.info(f"🎤 使用位置1: {vocals_path}")
+                elif vocals_path2.exists():
+                    vocals_path = vocals_path2
+                    self.logger.info(f"🎤 使用位置2: {vocals_path}")
+                else:
+                    vocals_path = None
+                    self.logger.error(f"❌ Vocals 檔案在兩個位置都不存在")
+                
+                if vocals_path:
+                    # 如果進行了預處理（補零），需要還原到原始長度
+                    if preprocessed_file and original_duration > 0:
+                        self.logger.info(f"🔧 還原音頻長度: 15.00s → {original_duration:.2f}s")
+                        
+                        # 載入處理後的人聲檔案
+                        processed_waveform, processed_sample_rate = torchaudio.load(str(vocals_path))
+                        
+                        # 計算原始音頻的樣本數
+                        original_samples = int(original_duration * processed_sample_rate)
+                        
+                        # 從補零音頻中提取原始長度部分（移除前後補零）
+                        # 補零是前後平均分配的，所以從中間提取原始長度
+                        total_samples = processed_waveform.shape[1]
+                        padding_samples = total_samples - original_samples
+                        padding_before = padding_samples // 2
+                        
+                        # 提取原始音頻部分
+                        restored_waveform = processed_waveform[:, padding_before:padding_before + original_samples]
+                        
+                        # 保存還原長度的音頻
+                        temp_restored_file = temp_output_dir / f"restored_{Path(vocals_file).name}"
+                        torchaudio.save(str(temp_restored_file), restored_waveform, processed_sample_rate)
+                        
+                        # 移動還原後的檔案到最終位置
+                        shutil.move(str(temp_restored_file), str(output_path))
+                        self.logger.info(f"✅ 人聲分離完成: {input_path.name} (還原: {original_duration:.2f}s)")
+                    else:
+                        # 沒有預處理的情況，直接移動
+                        shutil.move(str(vocals_path), str(output_path))
+                        self.logger.info(f"✅ 人聲分離完成: {input_path.name} (原始: {original_duration:.2f}s)")
+                    
+                    result['enhanced'] = True
             else:
                 raise RuntimeError("人聲檔案生成失敗")
 
@@ -349,6 +444,16 @@ class UVR5Processor:
                     Path(preprocessed_file).unlink()
                 except OSError as e:
                     self.logger.warning(f"⚠️  清理預處理檔案失敗: {e}")
+            
+            # 額外清理：清除可能散落在工作目錄的伴奏檔案
+            try:
+                current_dir = Path.cwd()
+                for pattern in ['*_(Instrumental)_*.wav', 'padded_*_(Instrumental)_*.wav']:
+                    for leftover_file in current_dir.glob(pattern):
+                        leftover_file.unlink()
+                        self.logger.debug(f"🧹 清理散落檔案: {leftover_file.name}")
+            except Exception as e:
+                self.logger.debug(f"清理散落檔案時出現錯誤: {e}")
             
             if self.device == 'cuda':
                 torch.cuda.empty_cache()
