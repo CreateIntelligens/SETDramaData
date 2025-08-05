@@ -109,17 +109,26 @@ class UVR5Processor:
 
     def setup_logging(self):
         """設定 logging 系統"""
-        log_file = Path.cwd() / 'uvr5_processor.log'
+        # 使用模組級別的 logger，所有實例共享同一個
+        logger_name = __name__
+        self.logger = logging.getLogger(logger_name)
         
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_file, encoding='utf-8'),
-                logging.StreamHandler()
-            ]
-        )
-        self.logger = logging.getLogger(__name__)
+        # 只在第一次初始化時設定 handlers
+        if not hasattr(logging.getLogger(logger_name), '_uvr5_configured'):
+            self.logger.setLevel(logging.DEBUG)
+            self.logger.propagate = False  # 防止向上傳播造成重複輸出
+            
+            # 清除所有現有的 handlers 以防重複
+            self.logger.handlers.clear()
+            
+            # 只使用 console 輸出，避免檔案權限問題
+            import threading
+            stream_handler = logging.StreamHandler()
+            stream_handler.setFormatter(logging.Formatter('%(asctime)s - UVR5 - %(levelname)s - %(message)s'))
+            self.logger.addHandler(stream_handler)
+            
+            # 標記已配置，避免重複設定
+            logging.getLogger(logger_name)._uvr5_configured = True
     
     def _setup_device(self, device: str) -> str:
         """設定處理裝置
@@ -312,15 +321,28 @@ class UVR5Processor:
         start_time = time.time()
         initial_memory = psutil.Process().memory_info().rss / (1024**2)
         
-        original_duration = self.get_audio_duration(str(input_path))
-        result['original_duration'] = original_duration
-        
         preprocessed_file = None
         actual_input_path = input_path
         temp_output_dir = None
         
         try:
-            # --- 主要處理邏輯 ---
+            # --- 🚀 優先檢查是否已處理過（真正快速跳過） ---
+            if backup_original and output_path == input_path:
+                backup_path = input_path.with_suffix('.bak')
+                
+                # 檢查是否已存在備份檔案 - 如果存在表示已處理過，立即跳過
+                if backup_path.exists():
+                    result['success'] = True
+                    result['enhanced'] = False
+                    result['already_processed'] = True
+                    result['backup_file'] = str(backup_path)
+                    result['processing_time'] = time.time() - start_time
+                    return result
+            
+            # --- 只有未處理的檔案才進行音檔分析 ---
+            original_duration = self.get_audio_duration(str(input_path))
+            result['original_duration'] = original_duration
+            
             # 所有音檔都需要格式檢查和標準化（不只是短音檔）
             preprocessed_file = self.pad_audio_for_uvr5(str(input_path))
             if preprocessed_file:
@@ -329,30 +351,25 @@ class UVR5Processor:
             else:
                 self.logger.debug(f"ℹ️  音頻無需預處理: {input_path.name}")
 
+            # 備份原始檔案（只有需要處理的檔案才備份）
             if backup_original and output_path == input_path:
                 backup_path = input_path.with_suffix('.bak')
+                input_path.rename(backup_path)
+                input_path = backup_path
+                result['backup_file'] = str(backup_path)
+                self.logger.info(f"💾 已備份原始檔案: {backup_path.name}")
                 
-                # 檢查是否已存在備份檔案
-                if backup_path.exists():
-                    self.logger.info(f"ℹ️  備份檔案已存在，跳過備份: {backup_path.name}")
-                    result['backup_skipped'] = True
-                    result['backup_file'] = str(backup_path)
-                    # 備份檔案已存在，使用備份檔案進行處理
-                    if not preprocessed_file:
-                        actual_input_path = backup_path
-                else:
-                    input_path.rename(backup_path)
-                    input_path = backup_path
-                    result['backup_file'] = str(backup_path)
-                    self.logger.info(f"💾 已備份原始檔案: {backup_path.name}")
-                    
-                    # 更新actual_input_path，如果之前是預處理檔案則不變，否則更新為備份檔案
-                    if not preprocessed_file:
-                        actual_input_path = backup_path
+                # 更新actual_input_path，如果之前是預處理檔案則不變，否則更新為備份檔案
+                if not preprocessed_file:
+                    actual_input_path = backup_path
 
             # 使用專用暫存目錄，避免在根目錄產生散落檔案
-            temp_output_dir = self.temp_dir / f"uvr5_processing_{int(time.time())}"
-            temp_output_dir.mkdir(exist_ok=True)
+            # 使用高精度時間戳 + 隨機數避免多執行緒衝突
+            import random
+            timestamp = int(time.time() * 1000000)  # 微秒級精度
+            random_id = random.randint(1000, 9999)
+            temp_output_dir = self.temp_dir / f"uvr5_processing_{timestamp}_{random_id}"
+            temp_output_dir.mkdir(parents=True, exist_ok=True)
             
             self.separator.output_dir = str(temp_output_dir)
             output_files = self.separator.separate(str(actual_input_path))
@@ -360,20 +377,29 @@ class UVR5Processor:
             # 除錯：記錄返回的檔案列表
             self.logger.info(f"🔍 分離器回傳檔案列表: {output_files}")
             for f in output_files:
-                # 檢查兩個可能的位置
-                file_path1 = temp_output_dir / f
-                file_path2 = self.temp_dir / f
-                self.logger.info(f"  📁 檔案: {f}")
-                self.logger.info(f"    位置1 {temp_output_dir}: {file_path1.exists()}")
-                self.logger.info(f"    位置2 {self.temp_dir}: {file_path2.exists()}")
+                # 確保檔案名稱不是 None
+                if f is None:
+                    self.logger.warning("⚠️  檔案列表中包含 None 值，跳過")
+                    continue
+                    
+                try:
+                    # 檢查兩個可能的位置
+                    file_path1 = temp_output_dir / str(f)
+                    file_path2 = self.temp_dir / str(f)
+                    self.logger.info(f"  📁 檔案: {f}")
+                    self.logger.info(f"    位置1 {temp_output_dir}: {file_path1.exists()}")
+                    self.logger.info(f"    位置2 {self.temp_dir}: {file_path2.exists()}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️  檢查檔案路徑時出錯 {f}: {e}")
+                    continue
             
-            vocals_file = next((f for f in output_files if 'vocals' in Path(f).name.lower() or '(vocals)' in Path(f).name.lower()), None)
+            vocals_file = next((f for f in output_files if f is not None and str(f) and ('vocals' in str(f).lower() or '(vocals)' in str(f).lower())), None)
             self.logger.info(f"🎤 找到的 Vocals 檔案: {vocals_file}")
             
             if vocals_file:
                 # 檢查兩個可能的位置
-                vocals_path1 = temp_output_dir / vocals_file
-                vocals_path2 = self.temp_dir / vocals_file
+                vocals_path1 = temp_output_dir / str(vocals_file)
+                vocals_path2 = self.temp_dir / str(vocals_file)
                 
                 if vocals_path1.exists():
                     vocals_path = vocals_path1
@@ -409,12 +435,22 @@ class UVR5Processor:
                         temp_restored_file = temp_output_dir / f"restored_{Path(vocals_file).name}"
                         torchaudio.save(str(temp_restored_file), restored_waveform, processed_sample_rate)
                         
-                        # 移動還原後的檔案到最終位置
-                        shutil.move(str(temp_restored_file), str(output_path))
+                        # 確保還原檔案存在再移動
+                        if temp_restored_file.exists():
+                            # 確保輸出目錄存在
+                            output_path.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.move(str(temp_restored_file), str(output_path))
+                        else:
+                            raise FileNotFoundError(f"還原檔案生成失敗: {temp_restored_file}")
                         self.logger.info(f"✅ 人聲分離完成: {input_path.name} (還原: {original_duration:.2f}s)")
                     else:
                         # 沒有預處理的情況，直接移動
-                        shutil.move(str(vocals_path), str(output_path))
+                        if vocals_path.exists():
+                            # 確保輸出目錄存在
+                            output_path.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.move(str(vocals_path), str(output_path))
+                        else:
+                            raise FileNotFoundError(f"Vocals 檔案不存在: {vocals_path}")
                         self.logger.info(f"✅ 人聲分離完成: {input_path.name} (原始: {original_duration:.2f}s)")
                     
                     result['enhanced'] = True
@@ -455,6 +491,15 @@ class UVR5Processor:
             except Exception as e:
                 self.logger.debug(f"清理散落檔案時出現錯誤: {e}")
             
+            # 清理此檔案相關的 temp 檔案
+            try:
+                input_filename = input_path.stem
+                for temp_file in self.temp_dir.glob(f"*{input_filename}*"):
+                    temp_file.unlink()
+                    self.logger.debug(f"🧹 清理暫存檔案: {temp_file.name}")
+            except Exception as e:
+                self.logger.debug(f"清理暫存檔案時出現錯誤: {e}")
+            
             if self.device == 'cuda':
                 torch.cuda.empty_cache()
             gc.collect()
@@ -465,6 +510,35 @@ class UVR5Processor:
         result['memory_usage_mb'] = current_memory - initial_memory
         
         return result
+    
+    def _analyze_directory_structure(self, input_dir: Path, audio_files: List[Path]):
+        """分析並顯示目錄結構統計"""
+        print("\n" + "="*60)
+        print("📊 目錄結構分析")
+        print("="*60)
+        
+        # 統計每個子目錄的檔案數量
+        dir_stats = {}
+        for audio_file in audio_files:
+            # 取得相對於輸入目錄的路徑
+            relative_path = audio_file.relative_to(input_dir)
+            parent_dir = str(relative_path.parent) if relative_path.parent != Path('.') else '根目錄'
+            
+            if parent_dir not in dir_stats:
+                dir_stats[parent_dir] = 0
+            dir_stats[parent_dir] += 1
+        
+        print(f"📁 基礎目錄: {input_dir}")
+        print(f"🎵 總音檔數: {len(audio_files)}")
+        print(f"📂 子目錄數: {len(dir_stats)}")
+        print("\n📋 各目錄檔案分布:")
+        
+        # 按檔案數量排序顯示
+        sorted_dirs = sorted(dir_stats.items(), key=lambda x: x[1], reverse=True)
+        for dir_name, file_count in sorted_dirs:
+            print(f"  📁 {dir_name}: {file_count} 檔案")
+        
+        print("="*60)
     
     def batch_enhance(self, input_dir: str, pattern: str = "*.wav",
                      backup_original: bool = False) -> Dict:
@@ -488,6 +562,9 @@ class UVR5Processor:
         if not audio_files:
             self.logger.warning(f"在 {input_dir} 中未找到匹配 {pattern} 的音檔")
             return {'success': False, 'error': 'No audio files found'}
+        
+        # 分析目錄結構
+        self._analyze_directory_structure(input_dir, audio_files)
         
         self.logger.info(f"📁 找到 {len(audio_files)} 個音檔進行處理")
         
@@ -619,10 +696,10 @@ class UVR5Processor:
         }
     
     def _generate_batch_report(self):
-        """生成批量處理報告"""
-        print("\n" + "="*60)
+        """生成批量處理報告 - 按目錄結構分組顯示"""
+        print("\n" + "="*80)
         print("🎵 UVR5 音頻增強批量處理報告")
-        print("="*60)
+        print("="*80)
         print(f"📊 處理統計:")
         print(f"  成功處理: {self.stats['processed_files']} 檔案")
         print(f"  處理失敗: {self.stats['failed_files']} 檔案")
@@ -633,9 +710,25 @@ class UVR5Processor:
             print(f"  平均處理時間: {avg_time:.2f} 秒/檔")
         
         if self.stats['failed_files'] > 0:
-            print(f"\n❌ 失敗檔案清單:")
+            print(f"\n❌ 失敗檔案清單 (按目錄分組):")
+            # 按目錄分組失敗檔案
+            failed_by_dir = {}
             for failed in self.stats['failed_list']:
-                print(f"  • {failed['file']}: {failed['error']}")
+                file_path = Path(failed['file'])
+                dir_name = str(file_path.parent)
+                if dir_name not in failed_by_dir:
+                    failed_by_dir[dir_name] = []
+                failed_by_dir[dir_name].append({
+                    'filename': file_path.name,
+                    'error': failed['error']
+                })
+            
+            # 顯示每個目錄的失敗檔案
+            for dir_name, files in failed_by_dir.items():
+                print(f"\n📁 目錄: {dir_name}")
+                for file_info in files:
+                    print(f"    • {file_info['filename']}: {file_info['error']}")
+                print(f"    小計: {len(files)} 個失敗檔案")
     
     def _generate_split_dataset_report(self, results: Dict):
         """生成切分資料集處理報告"""
@@ -734,6 +827,10 @@ class ThreadedUVR5Processor(UVR5Processor):
             return {'success': False, 'error': 'No audio files found'}
         
         total_files = len(audio_files)
+        
+        # 分析目錄結構
+        self._analyze_directory_structure(input_dir, audio_files)
+        
         self.logger.info(f"📁 找到 {total_files} 個音檔進行處理")
         
         # 根據並行數選擇處理方式
@@ -797,10 +894,16 @@ class ThreadedUVR5Processor(UVR5Processor):
         """多執行緒批量處理"""
         start_time = time.time()
         
-        # 檢查 GPU 記憶體
-        if not self._check_gpu_memory():
+        # 檢查 GPU 記憶體並動態調整執行緒數
+        actual_workers = self._check_gpu_memory()
+        if actual_workers <= 1:
             self.logger.warning("⚠️  GPU 記憶體不足，降級到單執行緒模式")
             return self._single_thread_batch_enhance(audio_files, backup_original)
+        elif actual_workers < self.max_workers:
+            # 動態調整執行緒數
+            original_workers = self.max_workers
+            self.max_workers = actual_workers
+            self.logger.info(f"🔧 動態調整執行緒數: {original_workers} → {actual_workers}")
         
         # 初始化統計
         stats = {
@@ -886,34 +989,57 @@ class ThreadedUVR5Processor(UVR5Processor):
             'failed_files': stats['failed_files']
         }
     
-    def _check_gpu_memory(self) -> bool:
-        """檢查 GPU 記憶體是否足夠進行多執行緒處理"""
+    def _check_gpu_memory(self) -> int:
+        """檢查 GPU 記憶體並返回建議的執行緒數"""
         if self.device != 'cuda' or not torch.cuda.is_available():
-            return True  # CPU 模式不需要檢查
+            return self.max_workers  # CPU 模式使用原始設定
         
         try:
             # 獲取 GPU 記憶體資訊
             gpu_memory = torch.cuda.get_device_properties(0).total_memory
-            gpu_free = torch.cuda.memory_reserved(0) - torch.cuda.memory_allocated(0)
+            gpu_free = gpu_memory - torch.cuda.memory_reserved(0)
             
-            # 估算每個處理器需要的記憶體 (保守估計 2.5GB)
-            estimated_memory_per_worker = 2.5 * 1024**3  # 2.5GB
-            required_memory = estimated_memory_per_worker * self.max_workers
+            # 動態調整每個 worker 的記憶體使用量
+            # 基於 GPU 總記憶體容量智慧分配
+            gpu_memory_gb = gpu_memory / (1024**3)
+            
+            if gpu_memory_gb >= 70:      # H100, A100 80GB 等高端卡
+                estimated_memory_per_worker = 2.8 * 1024**3  # 2.8GB (可跑 ~28 並行)
+                self.logger.info(f"🚀 檢測到高端 GPU ({gpu_memory_gb:.0f}GB)，使用積極並行策略")
+            elif gpu_memory_gb >= 40:    # A6000, RTX 6000 Ada 等
+                estimated_memory_per_worker = 3.2 * 1024**3  # 3.2GB (可跑 ~12 並行)
+                self.logger.info(f"🎯 檢測到專業級 GPU ({gpu_memory_gb:.0f}GB)，使用平衡策略")
+            elif gpu_memory_gb >= 20:    # RTX 4090, 3090 等
+                estimated_memory_per_worker = 3.5 * 1024**3  # 3.5GB (可跑 ~6 並行)
+                self.logger.info(f"🎮 檢測到高端遊戲卡 ({gpu_memory_gb:.0f}GB)，使用優化策略")
+            elif gpu_memory_gb >= 11:    # RTX 3060 12GB, 4060 Ti 等
+                estimated_memory_per_worker = 3.0 * 1024**3  # 3.0GB (可跑 ~4 並行)
+                self.logger.info(f"⚡ 檢測到中端卡 ({gpu_memory_gb:.0f}GB)，使用適中策略")
+            else:                        # 8GB 以下卡
+                estimated_memory_per_worker = 2.5 * 1024**3  # 2.5GB (可跑 ~3 並行)
+                self.logger.info(f"💡 檢測到入門卡 ({gpu_memory_gb:.0f}GB)，使用保守策略")
+            
+            # 計算理論上可支援的最大執行緒數
+            max_possible_workers = max(1, int(gpu_free // estimated_memory_per_worker))
+            
+            # 選擇較小的值：用戶設定 vs 記憶體限制
+            recommended_workers = min(self.max_workers, max_possible_workers)
             
             self.logger.info(f"📊 GPU 記憶體檢查:")
             self.logger.info(f"  總記憶體: {gpu_memory / 1024**3:.1f} GB")
             self.logger.info(f"  可用記憶體: {gpu_free / 1024**3:.1f} GB")
-            self.logger.info(f"  需要記憶體: {required_memory / 1024**3:.1f} GB ({self.max_workers} 執行緒)")
+            self.logger.info(f"  用戶設定執行緒: {self.max_workers}")
+            self.logger.info(f"  記憶體可支援執行緒: {max_possible_workers}")
+            self.logger.info(f"  實際使用執行緒: {recommended_workers}")
             
-            if gpu_free < required_memory:
-                self.logger.warning(f"⚠️  GPU 記憶體可能不足，建議降低並行數或使用單執行緒模式")
-                return False
+            if recommended_workers < self.max_workers:
+                self.logger.warning(f"⚠️  GPU 記憶體不足以支援 {self.max_workers} 執行緒，自動調整為 {recommended_workers} 執行緒")
             
-            return True
+            return recommended_workers
             
         except Exception as e:
             self.logger.warning(f"⚠️  無法檢查 GPU 記憶體: {e}")
-            return True  # 檢查失敗時允許繼續
+            return self.max_workers  # 檢查失敗時使用原始設定
             
         except Exception as e:
             self.logger.error(f"❌ GPU 記憶體檢查出現意外錯誤: {e}")
@@ -921,10 +1047,10 @@ class ThreadedUVR5Processor(UVR5Processor):
             return True  # 出現意外錯誤時允許繼續
     
     def _generate_threaded_batch_report(self, stats: Dict, total_files: int):
-        """生成多執行緒批量處理報告"""
-        print("\n" + "="*60)
+        """生成多執行緒批量處理報告 - 按目錄結構分組顯示"""
+        print("\n" + "="*80)
         print("🚀 多執行緒 UVR5 人聲分離批量處理報告")
-        print("="*60)
+        print("="*80)
         print(f"📊 處理統計:")
         print(f"  並行執行緒數: {self.max_workers}")
         print(f"  成功處理: {stats['processed_files']} 檔案")
@@ -941,9 +1067,25 @@ class ThreadedUVR5Processor(UVR5Processor):
             print(f"  估算加速比: {speedup:.1f}x")
         
         if stats['failed_files'] > 0:
-            print(f"\n❌ 失敗檔案清單:")
+            print(f"\n❌ 失敗檔案清單 (按目錄分組):")
+            # 按目錄分組失敗檔案
+            failed_by_dir = {}
             for failed in stats['failed_list']:
-                print(f"  • {failed['file']}: {failed['error']}")
+                file_path = Path(failed['file'])
+                dir_name = str(file_path.parent)
+                if dir_name not in failed_by_dir:
+                    failed_by_dir[dir_name] = []
+                failed_by_dir[dir_name].append({
+                    'filename': file_path.name,
+                    'error': failed['error']
+                })
+            
+            # 顯示每個目錄的失敗檔案
+            for dir_name, files in failed_by_dir.items():
+                print(f"\n📁 目錄: {dir_name}")
+                for file_info in files:
+                    print(f"    • {file_info['filename']}: {file_info['error']}")
+                print(f"    小計: {len(files)} 個失敗檔案")
 
 
 def main():

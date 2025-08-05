@@ -70,7 +70,9 @@ RUN conda activate ${VENV} && \
     --index-url https://download.pytorch.org/whl/cu124 && \
     pip install --no-cache-dir -r /tmp/cosyvoice_requirements.txt && \
     pip install --no-cache-dir -r /tmp/breeze_requirements.txt && \
-    pip install --upgrade audio-separator onnxruntime onnx-weekly && \
+    pip install --no-cache-dir onnx-weekly onnxruntime-gpu && \
+    pip install --no-cache-dir "numpy<2.0" && \
+    pip install --no-cache-dir --no-deps audio-separator==0.20.0 && \
     rm /tmp/cosyvoice_requirements.txt /tmp/breeze_requirements.txt
 
 # 離線環境不需要預下載模型，模型將透過掛載提供

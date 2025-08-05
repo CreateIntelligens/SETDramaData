@@ -1,10 +1,11 @@
 services:
   cosyvoice-etl-merged:
-    build:
-      context: .
-      dockerfile: Dockerfile.merged
-      args:
-        HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN}
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.merged
+    #   args:
+    #     HUGGINGFACE_TOKEN: ${HUGGINGFACE_TOKEN}
+    image: afspod-registry.dginfra.gov.tw/e35a0256-acd9-487d-8831-5b8fea621aef/cosyvoice:v006
     container_name: cosyvoice-etl-merged
     entrypoint: ["/usr/local/bin/activate-env"]
     env_file:
