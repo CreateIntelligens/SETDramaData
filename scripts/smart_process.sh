@@ -253,8 +253,9 @@ smart_process_episode() {
     local test_ratio="${DEFAULT_TEST_RATIO:-0.2}"
     
     if $python_cmd "src/split_dataset.py" \
-        --input_dir "$output_dir" \
-        --output_dir "$split_dir" \
+        --processed_dir "$output_dir" \
+        --split_dir "$split_dir" \
+        --method "episode" \
         --episode_num "$episode_num" \
         --test_ratio "$test_ratio"; then
         echo "✅ 切分完成"

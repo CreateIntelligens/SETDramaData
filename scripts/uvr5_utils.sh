@@ -11,6 +11,14 @@
 # 載入通用工具函數
 source "$(dirname "${BASH_SOURCE[0]}")/common_utils.sh"
 
+# 載入環境變數（如果存在）
+ENV_FILE="$(dirname "${BASH_SOURCE[0]}")/../.env"
+if [ -f "$ENV_FILE" ]; then
+    set -a
+    source "$ENV_FILE"
+    set +a
+fi
+
 # -----------------------------------------------------------------------------
 # -----------------------------------------------------------------------------
 # 日誌檔案
@@ -67,7 +75,7 @@ try:
     print('✅ UVR5 處理器可用')
     print(f'🎮 設備: {model_info[\"device\"]}')
     print(f'📁 模型路徑: {model_info[\"model_path\"]}')
-    print(f'📊 批次大小: {model_info[\"batch_size\"]}')
+    print(f'📊 批次大小: $UVR5_BATCH_SIZE')
     print(f'🚀 並行執行緒: $UVR5_MAX_WORKERS')
     
     processor.cleanup()

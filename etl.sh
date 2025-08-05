@@ -9,6 +9,11 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Ensure data directories exist and have correct permissions
+mkdir -p data/temp data/output data/uvr5_test_output 2>/dev/null || true
+# Try to fix permissions if possible
+[ -w data/ ] || echo "⚠️  data/ 目錄權限問題，建議在 Host 執行: sudo chown -R 1000:1000 data/ output/"
+
 # Load environment variables
 if [ -f ".env" ]; then
     set -a
@@ -43,13 +48,14 @@ smart_process_menu() {
     echo "• 全程自動化，無需確認"
     echo ""
     echo "請選擇處理方式："
-    echo "1. 🚀 智慧一條龍處理 (標準)"
-    echo "2. 🎵 智慧一條龍處理 + UVR5人聲分離"
-    echo "3. 處理單集"
-    echo "4. 處理多集"
-    echo "5. 返回主選單"
+    echo "1. 🚀 智慧一條龍處理"
+    echo "2. 處理單集"
+    echo "3. 處理多集"
+    echo "4. 返回主選單"
     echo ""
-    echo -n "請選擇 [1-5]: "
+    echo "💡 提示：如需 UVR5 人聲分離，請在處理完成後使用主選單的「UVR5 人聲分離」功能"
+    echo ""
+    echo -n "請選擇 [1-4]: "
     read choice
     
     case "$choice" in
@@ -72,8 +78,8 @@ smart_process_menu() {
             ;;
         2)
             echo ""
-            echo "🎵 智慧一條龍處理 + UVR5人聲分離"
-            echo "⚠️  此選項會在標準處理完成後，對切分資料集進行 UVR5 人聲分離（去背景音樂）"
+            echo "🎯 處理單集"
+            echo "========"
             echo ""
             echo "請輸入集數範圍（例如：1 2 3 或 1-5）："
             echo -n "集數: "

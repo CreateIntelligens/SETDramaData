@@ -54,31 +54,29 @@ WORKDIR /workspace
 
 # PYTHONPATH will be updated later to include etl
 
-# Install CosyVoice dependencies (without source code)
+# Install pynini using conda
 RUN conda activate ${VENV} && conda install -y -c conda-forge pynini==2.1.5
 
-# Install PyTorch with CUDA 12.4 support
-RUN conda activate ${VENV} && \
-    pip install --retries 3 --timeout 300 \
-    torch>=2.0.0 torchaudio>=2.0.0 \
-    --index-url https://download.pytorch.org/whl/cu124
+# Copy all requirements
+COPY cosyvoice_docker/requirements.txt /tmp/cosyvoice_requirements.txt
+COPY requirements.txt /tmp/breeze_requirements.txt
 
-# ==================================================================
-# Install merged requirements (CosyVoice + Breeze ASR)
-# ------------------------------------------------------------------
-COPY requirements.merged.txt /tmp/requirements.merged.txt
-
-# Install all dependencies in one shot
+# Install following the same pattern as successful etl container
 RUN conda activate ${VENV} && \
-    pip install --retries 3 --timeout 300 \
-    -i https://pypi.org/simple/ \
-    -r /tmp/requirements.merged.txt && \
-    rm /tmp/requirements.merged.txt
+    pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+    torch>=2.0.0 \
+    torchaudio>=2.0.0 \
+    --index-url https://download.pytorch.org/whl/cu124 && \
+    pip install --no-cache-dir -r /tmp/cosyvoice_requirements.txt && \
+    pip install --no-cache-dir -r /tmp/breeze_requirements.txt && \
+    pip install --upgrade audio-separator onnxruntime onnx-weekly && \
+    rm /tmp/cosyvoice_requirements.txt /tmp/breeze_requirements.txt
 
 # 離線環境不需要預下載模型，模型將透過掛載提供
 
 # Create directory for etl project (will be mounted)
-RUN mkdir -p /workspace/etl
+RUN mkdir -p /workspace/etl /workspace/etl/data/temp /workspace/etl/data/output
 
 # Update PYTHONPATH to include etl
 ENV PYTHONPATH="${PYTHONPATH}:/workspace/etl:/workspace/etl/src"
@@ -93,7 +91,6 @@ ENV KMP_DUPLICATE_LIB_OK=TRUE
 ENV KMP_WARNINGS=FALSE
 ENV TORCH_WARN=0
 ENV PYTORCH_DISABLE_WARNINGS=1
-
 
 # Create activation script for easier use (as root before switching user)
 RUN echo '#!/bin/bash' > /usr/local/bin/activate-env && \
@@ -110,8 +107,12 @@ RUN echo '#!/bin/bash' > /usr/local/bin/activate-env && \
 
 # Create non-root user for security
 RUN useradd -m -u 1000 louis && \
-    chown -R louis:louis /workspace
+    chown -R louis:louis /workspace && \
+    chmod -R 755 /workspace/etl
 USER louis
+
+# Ensure proper permissions for data directories after mount
+RUN mkdir -p /workspace/etl/data/temp /workspace/etl/data/output || true
 
 # 離線環境不需要 HuggingFace token
 

@@ -501,11 +501,95 @@ process_and_split_menu() {
     pause_for_input
 }
 
+# Function to split dataset by episode
+split_dataset_episode() {
+    local processed_dir="$1"
+    local output_dir="$2"
+    local test_ratio="${3:-0.2}"
+    local episode_num="$4"
+    
+    echo ""
+    echo "📊 按集數切分資料集"
+    echo "=================="
+    
+    if [ ! -d "$processed_dir" ]; then
+        echo "❌ 處理後目錄不存在: $processed_dir"
+        return 1
+    fi
+    
+    local processed_count=$(find "$processed_dir" -name "*.wav" 2>/dev/null | wc -l)
+    if [ "$processed_count" -eq 0 ]; then
+        echo "❌ 沒有找到任何處理後的音訊檔案"
+        return 1
+    fi
+    
+    echo "📁 找到 $processed_count 個處理後的音訊檔案"
+    echo "📋 集數: $episode_num"
+    echo "📋 測試集比例: $test_ratio"
+    
+    echo "🚀 開始按集數切分..."
+    
+    # Run dataset splitting script with episode method
+    local python_cmd=$(detect_python)
+    if [ -z "$python_cmd" ]; then
+        echo "❌ 找不到 Python"
+        return 1
+    fi
+    
+    echo ""
+    echo "🔄 開始切分..."
+    
+    $python_cmd "src/split_dataset.py" \
+        --processed_dir "$processed_dir" \
+        --split_dir "$output_dir" \
+        --method "episode" \
+        --episode_num "$episode_num" \
+        --test_ratio "$test_ratio"
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ 資料集切分完成"
+        
+        # Show statistics
+        local train_count=$(find "$output_dir/train" -name "*.wav" 2>/dev/null | wc -l)
+        local test_count=$(find "$output_dir/test" -name "*.wav" 2>/dev/null | wc -l)
+        
+        echo ""
+        echo "📊 切分統計:"
+        echo "  🎓 訓練集: $train_count 檔案"
+        echo "  🧪 測試集: $test_count 檔案"
+        
+        return 0
+    else
+        echo "❌ 資料集切分失敗"
+        return 1
+    fi
+}
+
 # Menu function for split dataset only
 split_dataset_menu() {
     echo ""
     echo "📊 切分訓練/測試集"
     echo "================"
+    
+    echo "請選擇切分方法："
+    echo "1. 按人物切分 (files) - 每個人物的檔案分散到 train/test"
+    echo "2. 按集數切分 (episode) - 指定集數進行切分"
+    echo ""
+    echo -n "選擇方法 [1-2]: "
+    read method_choice
+    
+    case "$method_choice" in
+        1)
+            method="files"
+            ;;
+        2)
+            method="episode"
+            ;;
+        *)
+            echo "❌ 無效選擇，使用預設方法：按人物切分"
+            method="files"
+            ;;
+    esac
     
     echo -n "處理後目錄 [預設: ${DEFAULT_PROCESSED_DIR:-output}]: "
     read processed_dir
@@ -519,6 +603,17 @@ split_dataset_menu() {
     read test_ratio
     test_ratio="${test_ratio:-${DEFAULT_TEST_RATIO:-0.2}}"
     
-    split_dataset "$processed_dir" "$output_dir" "$test_ratio"
+    if [ "$method" = "episode" ]; then
+        echo -n "集數 (例如: 001): "
+        read episode_num
+        if [ -z "$episode_num" ]; then
+            echo "❌ 集數不能為空"
+            return 1
+        fi
+        split_dataset_episode "$processed_dir" "$output_dir" "$test_ratio" "$episode_num"
+    else
+        split_dataset "$processed_dir" "$output_dir" "$test_ratio"
+    fi
+    
     pause_for_input
 }
