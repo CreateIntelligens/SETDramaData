@@ -105,25 +105,45 @@ def split_by_episode(processed_dir: str, split_dir: str, episode_num: str, test_
     train_count = 0
     test_count = 0
     
+    # Convert episode number to 3-digit format
+    episode_padded = f"{int(episode_num):03d}"
+    print(f"尋找集數目錄: {episode_padded}")
+    
     # Find all speakers that have data for this episode
     episode_speakers = []
     for speaker in os.listdir(processed_dir):
         if os.path.isdir(os.path.join(processed_dir, speaker)) and speaker.isdigit():
-            episode_dir = os.path.join(processed_dir, speaker, episode_num)
+            # Try both padded and unpadded episode numbers
+            episode_dir = os.path.join(processed_dir, speaker, episode_padded)
+            if not os.path.exists(episode_dir):
+                episode_dir = os.path.join(processed_dir, speaker, episode_num)
+            
             if os.path.exists(episode_dir) and os.path.isdir(episode_dir):
                 files = [f for f in os.listdir(episode_dir) if f.endswith('.wav')]
                 if files:  # Only include speakers with actual audio files
-                    episode_speakers.append(speaker)
+                    episode_speakers.append((speaker, episode_dir))
+                    print(f"找到語者 {speaker}: {episode_dir} ({len(files)} 個音檔)")
     
     if not episode_speakers:
         print(f"找不到第 {episode_num} 集的音檔資料")
+        print(f"檢查的目錄格式: {episode_num} 和 {episode_padded}")
+        # Debug: 列出實際存在的目錄
+        print("實際存在的語者目錄:")
+        for speaker in os.listdir(processed_dir):
+            speaker_path = os.path.join(processed_dir, speaker)
+            if os.path.isdir(speaker_path):
+                print(f"  語者 {speaker}:")
+                for item in os.listdir(speaker_path):
+                    item_path = os.path.join(speaker_path, item)
+                    if os.path.isdir(item_path):
+                        print(f"    - {item}/")
         return
     
-    print(f"第 {episode_num} 集包含 {len(episode_speakers)} 個語者: {', '.join(episode_speakers)}")
+    speaker_names = [speaker for speaker, _ in episode_speakers]
+    print(f"第 {episode_num} 集包含 {len(episode_speakers)} 個語者: {', '.join(speaker_names)}")
     
     # For each speaker in this episode, split their files
-    for speaker in episode_speakers:
-        episode_dir = os.path.join(processed_dir, speaker, episode_num)
+    for speaker, episode_dir in episode_speakers:
         files = [f for f in os.listdir(episode_dir) if f.endswith('.wav')]
         
         if not files:
@@ -139,11 +159,11 @@ def split_by_episode(processed_dir: str, split_dir: str, episode_num: str, test_
         
         # Copy train files
         for filename in train_files:
-            train_speaker_dir = os.path.join(train_dir, speaker)
-            os.makedirs(train_speaker_dir, exist_ok=True)
+            train_speaker_episode_dir = os.path.join(train_dir, speaker, episode_padded)
+            os.makedirs(train_speaker_episode_dir, exist_ok=True)
             
             src_file = os.path.join(episode_dir, filename)
-            dst_file = os.path.join(train_speaker_dir, filename)
+            dst_file = os.path.join(train_speaker_episode_dir, filename)
             
             # Copy audio file
             with open(src_file, 'rb') as src, open(dst_file, 'wb') as dst:
@@ -153,7 +173,7 @@ def split_by_episode(processed_dir: str, split_dir: str, episode_num: str, test_
             txt_filename = filename.replace('.wav', '.normalized.txt')
             src_txt = os.path.join(episode_dir, txt_filename)
             if os.path.exists(src_txt):
-                dst_txt = os.path.join(train_speaker_dir, txt_filename)
+                dst_txt = os.path.join(train_speaker_episode_dir, txt_filename)
                 with open(src_txt, 'rb') as src, open(dst_txt, 'wb') as dst:
                     dst.write(src.read())
             
@@ -161,11 +181,11 @@ def split_by_episode(processed_dir: str, split_dir: str, episode_num: str, test_
         
         # Copy test files  
         for filename in test_files:
-            test_speaker_dir = os.path.join(test_dir, speaker)
-            os.makedirs(test_speaker_dir, exist_ok=True)
+            test_speaker_episode_dir = os.path.join(test_dir, speaker, episode_padded)
+            os.makedirs(test_speaker_episode_dir, exist_ok=True)
             
             src_file = os.path.join(episode_dir, filename)
-            dst_file = os.path.join(test_speaker_dir, filename)
+            dst_file = os.path.join(test_speaker_episode_dir, filename)
             
             # Copy audio file
             with open(src_file, 'rb') as src, open(dst_file, 'wb') as dst:
@@ -175,7 +195,7 @@ def split_by_episode(processed_dir: str, split_dir: str, episode_num: str, test_
             txt_filename = filename.replace('.wav', '.normalized.txt')
             src_txt = os.path.join(episode_dir, txt_filename)
             if os.path.exists(src_txt):
-                dst_txt = os.path.join(test_speaker_dir, txt_filename)
+                dst_txt = os.path.join(test_speaker_episode_dir, txt_filename)
                 with open(src_txt, 'rb') as src, open(dst_txt, 'wb') as dst:
                     dst.write(src.read())
             

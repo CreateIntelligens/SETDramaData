@@ -4,7 +4,7 @@
 # UVR5 人聲分離工具函數
 # =============================================================================
 # 功能：針對切分後的短音檔進行人聲分離，去除背景音樂
-# 作者：Breeze ASR ETL Pipeline
+# 作者： TTS ETL Pipeline
 # 版本：1.0
 # =============================================================================
 
@@ -374,7 +374,7 @@ show_uvr5_status() {
 # 使用者介面
 # -----------------------------------------------------------------------------
 
-# UVR5 主選單介面
+# UVR5 主選單介面 - 更新版本
 show_uvr5_menu() {
     while true; do
         echo ""
@@ -382,81 +382,102 @@ show_uvr5_menu() {
         echo "==================="
         echo ""
         echo "請選擇功能："
-        echo "1. 📊 對切分資料集進行 UVR5 人聲分離"
-        echo "2. 📁 對指定目錄進行 UVR5 人聲分離"
-        echo "3. 🎵 測試單個音檔"
-        echo "4. 🔍 檢查 UVR5 環境"
-        echo "5. ⚙️  顯示 UVR5 狀態"
-        echo "6. 返回主選單"
+        echo "1. 🚀 UVR5 音頻處理 (支援檔案、目錄、萬用字元)"
+        echo "2. 🔍 檢查 UVR5 環境"
+        echo "3. ⚙️  顯示 UVR5 狀態"
+        echo "4. 返回主選單"
         echo ""
-        echo -n "請選擇 [1-6]: "
+        echo -n "請選擇 [1-4]: "
         read choice
         
         case "$choice" in
             1)
                 echo ""
-                echo -n "請輸入切分資料集路徑 (預設: data/split_dataset): "
-                read split_dir
-                split_dir="${split_dir:-data/split_dataset}"
+                echo "🚀 UVR5 音頻處理"
+                echo "支援格式："
+                echo "  • 單一檔案: input.wav"
+                echo "  • 目錄路徑: data/audio/"
+                echo "  • 萬用字元: backup_*.wav, **/*.mp3"
+                echo "  • 切分資料集: data/split_dataset"
+                echo ""
+                echo -n "請輸入路徑或模式: "
+                read input_path
                 
-                echo -n "是否備份原始檔案? [y/N]: "
-                read backup_choice
-                local backup_original="false"
-                if [[ "$backup_choice" =~ ^[Yy]$ ]]; then
-                    backup_original="true"
+                if [ -z "$input_path" ]; then
+                    echo "❌ 請提供有效路徑"
+                    pause_for_input
+                    continue
                 fi
                 
-                if ! uvr5_enhance_split_dataset "$split_dir" "$backup_original"; then
-                    echo "❌ UVR5 處理失敗，請檢查日誌以獲取更多資訊。"
+                echo -n "執行緒數量 (預設: ${UVR5_MAX_WORKERS:-2}): "
+                read threads_input
+                local threads="${threads_input:-${UVR5_MAX_WORKERS:-2}}"
+                
+                echo -n "是否備份原始檔案? [Y/n]: "
+                read backup_choice
+                local backup_flag="--backup"
+                if [[ "$backup_choice" =~ ^[Nn]$ ]]; then
+                    backup_flag="--no-backup"
+                fi
+                
+                # 檢查是否為單一檔案，如果是則先 dry-run
+                if [ -f "$input_path" ]; then
+                    echo ""
+                    echo "🎵 檢查檔案..."
+                    local python_cmd=$(detect_python)
+                    if [ -z "$python_cmd" ]; then
+                        echo "❌ 找不到 Python"
+                        pause_for_input
+                        continue
+                    fi
+                    
+                    if $python_cmd "uvr5_cli.py" "$input_path" --threads "$threads" $backup_flag --dry-run; then
+                        echo ""
+                        echo -n "確定要處理這個檔案嗎? [y/N]: "
+                        read confirm
+                        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+                            echo "❌ 使用者取消"
+                            pause_for_input
+                            continue
+                        fi
+                    else
+                        echo "❌ 檔案檢查失敗"
+                        pause_for_input
+                        continue
+                    fi
+                fi
+                
+                echo ""
+                echo "🎵 開始 UVR5 處理..."
+                echo "輸入: $input_path"
+                echo "執行緒: $threads"
+                echo "備份: $([ "$backup_flag" = "--backup" ] && echo "是" || echo "否")"
+                
+                local python_cmd=$(detect_python)
+                if [ -z "$python_cmd" ]; then
+                    echo "❌ 找不到 Python"
+                    pause_for_input
+                    continue
+                fi
+                
+                if $python_cmd "uvr5_cli.py" "$input_path" --threads "$threads" $backup_flag; then
+                    echo "✅ UVR5 處理完成"
+                else
+                    echo "❌ UVR5 處理失敗，請檢查日誌"
                 fi
                 pause_for_input
                 ;;
             2)
                 echo ""
-                echo -n "請輸入目錄路徑: "
-                read input_dir
-                if [ -z "$input_dir" ]; then
-                    echo "❌ 目錄路徑不能為空"
-                    pause_for_input
-                    continue
-                fi
-                
-                echo -n "是否備份原始檔案? [y/N]: "
-                read backup_choice
-                local backup_original="false"
-                if [[ "$backup_choice" =~ ^[Yy]$ ]]; then
-                    backup_original="true"
-                fi
-                
-                if ! uvr5_enhance_directory "$input_dir" "$backup_original"; then
-                    echo "❌ UVR5 處理失敗，請檢查日誌以獲取更多資訊。"
-                fi
+                check_uvr5_environment
                 pause_for_input
                 ;;
             3)
                 echo ""
-                echo -n "請輸入音檔路徑: "
-                read audio_file
-                if [ -z "$audio_file" ]; then
-                    echo "❌ 音檔路徑不能為空"
-                    pause_for_input
-                    continue
-                fi
-                
-                uvr5_test_single_file "$audio_file"
-                pause_for_input
-                ;;
-            4)
-                echo ""
-                check_uvr5_environment
-                pause_for_input
-                ;;
-            5)
-                echo ""
                 show_uvr5_status
                 pause_for_input
                 ;;
-            6)
+            4)
                 return
                 ;;
             *)

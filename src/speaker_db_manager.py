@@ -5,6 +5,8 @@ Command-line interface for managing speaker database
 """
 
 import argparse
+import os
+import shutil
 import sys
 from pathlib import Path
 from speaker_database import SpeakerDatabase, migrate_from_json
@@ -133,8 +135,8 @@ def cmd_backup(args):
 
 def main():
     parser = argparse.ArgumentParser(description="Speaker Database Manager")
-    parser.add_argument("--database", "-d", default="data/speakers.db", 
-                       help="Path to SQLite database (default: data/speakers.db)")
+    parser.add_argument("--database", "-d", default=os.environ.get('SPEAKERS_DATABASE_PATH', 'data/speakers.db'), 
+                       help="Path to SQLite database (default: from SPEAKERS_DATABASE_PATH env or data/speakers.db)")
     
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
     

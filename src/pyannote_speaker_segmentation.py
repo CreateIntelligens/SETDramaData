@@ -397,7 +397,8 @@ def main():
 
     # 初始化資料庫
     print("1. 初始化資料庫...")
-    db = SpeakerDatabase()
+    db_path = os.environ.get('SPEAKERS_DATABASE_PATH', 'data/speakers.db')
+    db = SpeakerDatabase(db_path)
 
     # 檢查是否已處理
     processed_episodes = db.get_processed_episodes()

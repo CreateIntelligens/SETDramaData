@@ -54,18 +54,23 @@ show_output_status() {
     echo "📁 輸出目錄狀態"
     echo "=============="
     
-    if [ ! -d "output" ]; then
-        echo "❌ output 目錄不存在"
+    # 使用 .env 中的路徑設定
+    local output_dir="${DEFAULT_PROCESSED_DIR:-output}"
+    
+    if [ ! -d "$output_dir" ]; then
+        echo "❌ $output_dir 目錄不存在"
         return
     fi
     
+    echo "📁 使用目錄: $output_dir"
+    
     # Count files and directories
-    local speaker_dirs=$(find output -maxdepth 1 -type d | wc -l)
+    local speaker_dirs=$(find "$output_dir" -maxdepth 1 -type d | wc -l)
     speaker_dirs=$((speaker_dirs - 1))  # Subtract output directory itself
     
-    local wav_files=$(find output -name "*.wav" | wc -l)
-    local txt_files=$(find output -name "*.txt" | wc -l)
-    local tsv_files=$(find output -name "*.tsv" | wc -l)
+    local wav_files=$(find "$output_dir" -name "*.wav" | wc -l)
+    local txt_files=$(find "$output_dir" -name "*.txt" | wc -l)
+    local tsv_files=$(find "$output_dir" -name "*.tsv" | wc -l)
     
     echo "🎵 音頻檔案: $wav_files 個"
     echo "📝 文字檔案: $txt_files 個"
@@ -95,7 +100,7 @@ EOF
                 if [ -n "$episode" ] && [[ "$episode" =~ ^[0-9]+$ ]]; then
                     local episode_padded=$(printf "%03d" "$episode" 2>/dev/null)
                     if [ $? -eq 0 ]; then
-                        local total_files=$(find output -path "*/$episode_padded/*" -type f 2>/dev/null | wc -l)
+                        local total_files=$(find "$output_dir" -path "*/$episode_padded/*" -type f 2>/dev/null | wc -l)
                         if [ "$total_files" -gt 0 ]; then
                             echo "   第 $episode 集: $total_files 個檔案"
                         fi
@@ -114,10 +119,15 @@ show_split_dataset_status() {
     echo "📊 切分資料集狀態"
     echo "================"
     
-    if [ ! -d "split_dataset" ]; then
-        echo "❌ split_dataset 目錄不存在"
+    # 使用 .env 中的路徑設定
+    local split_dir="${DEFAULT_SPLIT_DIR:-split_dataset}"
+    
+    if [ ! -d "$split_dir" ]; then
+        echo "❌ $split_dir 目錄不存在"
         return
     fi
+    
+    echo "📁 使用目錄: $split_dir"
     
     # Check train and test directories
     local train_speakers=0
@@ -125,16 +135,16 @@ show_split_dataset_status() {
     local train_files=0
     local test_files=0
     
-    if [ -d "split_dataset/train" ]; then
-        train_speakers=$(find split_dataset/train -maxdepth 1 -type d | wc -l)
+    if [ -d "$split_dir/train" ]; then
+        train_speakers=$(find "$split_dir/train" -maxdepth 1 -type d | wc -l)
         train_speakers=$((train_speakers - 1))  # Subtract train directory itself
-        train_files=$(find split_dataset/train -name "*.wav" | wc -l)
+        train_files=$(find "$split_dir/train" -name "*.wav" | wc -l)
     fi
     
-    if [ -d "split_dataset/test" ]; then
-        test_speakers=$(find split_dataset/test -maxdepth 1 -type d | wc -l)
+    if [ -d "$split_dir/test" ]; then
+        test_speakers=$(find "$split_dir/test" -maxdepth 1 -type d | wc -l)
         test_speakers=$((test_speakers - 1))  # Subtract test directory itself
-        test_files=$(find split_dataset/test -name "*.wav" | wc -l)
+        test_files=$(find "$split_dir/test" -name "*.wav" | wc -l)
     fi
     
     echo "🚂 訓練集: $train_files 個音頻檔案"
@@ -226,8 +236,9 @@ EOF
     echo "📁 輸出檔案:"
     local found_dirs=0
     local total_files=0
+    local output_dir="${DEFAULT_PROCESSED_DIR:-output}"
     
-    for speaker_dir in output/*/; do
+    for speaker_dir in "$output_dir"/*/; do
         if [ -d "$speaker_dir" ]; then
             local episode_dir="$speaker_dir$episode_padded"
             if [ -d "$episode_dir" ]; then
@@ -249,9 +260,10 @@ EOF
     # Check split dataset
     echo ""
     echo "📊 切分資料集:"
-    if [ -d "split_dataset" ]; then
-        local train_files=$(find split_dataset/train -path "*/$episode_padded/*" -type f 2>/dev/null | wc -l)
-        local test_files=$(find split_dataset/test -path "*/$episode_padded/*" -type f 2>/dev/null | wc -l)
+    local split_dir="${DEFAULT_SPLIT_DIR:-split_dataset}"
+    if [ -d "$split_dir" ]; then
+        local train_files=$(find "$split_dir/train" -path "*/$episode_padded/*" -type f 2>/dev/null | wc -l)
+        local test_files=$(find "$split_dir/test" -path "*/$episode_padded/*" -type f 2>/dev/null | wc -l)
         
         echo "   🚂 訓練集: $train_files 個檔案"
         echo "   🧪 測試集: $test_files 個檔案"
@@ -275,10 +287,11 @@ show_status() {
         
         echo "詳細選項:"
         echo "1. 查看特定集數資訊"
-        echo "2. 刷新狀態"
-        echo "3. 返回主選單"
+        echo "2. 查看處理時間統計"
+        echo "3. 刷新狀態"
+        echo "4. 返回主選單"
         echo ""
-        echo -n "請選擇 [1-3]: "
+        echo -n "請選擇 [1-4]: "
         read choice
         
         case "$choice" in
@@ -287,9 +300,44 @@ show_status() {
                 pause_for_input
                 ;;
             2)
-                continue  # Just refresh by continuing the loop
+                echo ""
+                echo "📊 處理時間統計選項："
+                echo "1. 查看所有集數統計"
+                echo "2. 查看特定集數統計"
+                echo "3. 清理舊日誌"
+                echo ""
+                echo -n "請選擇 [1-3]: "
+                read timing_choice
+                
+                case "$timing_choice" in
+                    1)
+                        show_all_timing_summary
+                        ;;
+                    2)
+                        echo -n "請輸入集數: "
+                        read episode_num
+                        if [ -n "$episode_num" ] && [[ "$episode_num" =~ ^[0-9]+$ ]]; then
+                            show_timing_summary "$episode_num"
+                        else
+                            echo "❌ 請輸入有效的集數"
+                        fi
+                        ;;
+                    3)
+                        echo -n "保留幾天的日誌記錄 [預設: 7]: "
+                        read days_to_keep
+                        days_to_keep="${days_to_keep:-7}"
+                        clean_timing_log "$days_to_keep"
+                        ;;
+                    *)
+                        echo "❌ 無效選項"
+                        ;;
+                esac
+                pause_for_input
                 ;;
             3)
+                continue  # Just refresh by continuing the loop
+                ;;
+            4)
                 break
                 ;;
             *)

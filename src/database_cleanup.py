@@ -4,6 +4,7 @@ Database cleanup utilities for specific episodes
 """
 
 import sys
+import os
 import argparse
 from pathlib import Path
 from speaker_database import SpeakerDatabase
@@ -97,7 +98,7 @@ def show_episodes_from_database(db_path: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Database cleanup utilities")
-    parser.add_argument("--database", "-d", default="data/speakers.db", help="SQLite database path")
+    parser.add_argument("--database", "-d", default=os.environ.get('SPEAKERS_DATABASE_PATH', 'data/speakers.db'), help="SQLite database path")
     
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
     

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Breeze ASR - ETL Pipeline
+#  TTS - ETL Pipeline
 # 音頻數據 ETL 處理管線 (Extract, Transform, Load)
 
 set -e
@@ -27,6 +27,7 @@ source "scripts/status_utils.sh"
 source "scripts/cleanup_utils.sh"
 source "scripts/process_utils.sh"
 source "scripts/smart_process.sh"
+source "scripts/timing_log.sh"
 
 # Load management modules
 source "scripts/model_management.sh"
@@ -35,52 +36,31 @@ source "scripts/database_management.sh"
 source "scripts/uvr5_utils.sh"
 
 
-# Smart process menu
+# Smart process menu - 簡化版本
 smart_process_menu() {
     echo ""
-    echo "🚀 智慧一條龍處理"
+    echo "🚀 智慧 UVR5 處理"
     echo "=================="
     echo ""
     echo "💡 說明："
-    echo "• 自動檢測集數是否已處理，如已處理會自動清理重做"
-    echo "• 處理完成後立即切分該集，無需手動操作"
-    echo "• 使用 .env 設定的路徑，無需重複詢問"
-    echo "• 全程自動化，無需確認"
+    echo "• 自動 UVR5 人聲分離 + 智慧處理 + 切分資料集"
+    echo "• 支援集數輸入、路徑輸入或萬用字元匹配"
     echo ""
-    echo "請選擇處理方式："
-    echo "1. 🚀 智慧一條龍處理"
-    echo "2. 處理單集"
-    echo "3. 處理多集"
-    echo "4. 返回主選單"
+    echo "請選擇輸入方式："
+    echo "1. 📊 按集數處理 (例如: 1 2 3 或 1-5) [預設]"
+    echo "2. 📁 按路徑處理 (例如: data/audio/ 或 *.wav)"
+    echo "3. 返回主選單"
     echo ""
-    echo "💡 提示：如需 UVR5 人聲分離，請在處理完成後使用主選單的「UVR5 人聲分離」功能"
-    echo ""
-    echo -n "請選擇 [1-4]: "
+    echo -n "請選擇 [1-3，預設1]: "
     read choice
+    
+    # 如果沒有輸入，預設為1
+    choice="${choice:-1}"
     
     case "$choice" in
         1)
             echo ""
-            echo "📋 標準智慧一條龍處理"
-            echo "請輸入集數範圍（例如：1 2 3 或 1-5）："
-            echo -n "集數: "
-            read episodes_input
-            
-            # Parse episodes input
-            episodes_output=$(validate_episode_input "$episodes_input")
-            if [ $? -eq 0 ]; then
-                readarray -t episodes <<< "$episodes_output"
-                smart_process_episodes "${episodes[@]}"
-            else
-                echo "$episodes_output"
-            fi
-            pause_for_input
-            ;;
-        2)
-            echo ""
-            echo "🎯 處理單集"
-            echo "========"
-            echo ""
+            echo "📊 按集數 UVR5 智慧處理"
             echo "請輸入集數範圍（例如：1 2 3 或 1-5）："
             echo -n "集數: "
             read episodes_input
@@ -90,61 +70,167 @@ smart_process_menu() {
             if [ $? -eq 0 ]; then
                 readarray -t episodes <<< "$episodes_output"
                 
-                # 先執行標準處理
-                echo "🚀 執行標準智慧處理..."
-                if smart_process_episodes "${episodes[@]}"; then
-                    echo ""
-                    echo "🎵 開始 UVR5 人聲分離..."
-                    echo -n "是否對處理結果進行 UVR5 人聲分離? [Y/n]: "
-                    read confirm_uvr5
-                    
-                    if [[ ! "$confirm_uvr5" =~ ^[Nn]$ ]]; then
-                        # 檢查 UVR5 環境
-                        if check_uvr5_environment >/dev/null 2>&1; then
-                            if ! uvr5_enhance_split_dataset "data/split_dataset" "false"; then
-                                echo "❌ UVR5 處理失敗，請檢查日誌以獲取更多資訊。"
-                            fi
-                        else
-                            echo "❌ UVR5 環境未準備就緒"
-                            echo "請先檢查 UVR5 設定和模型檔案"
-                        fi
-                    fi
-                else
-                    echo "❌ 標準處理失敗，跳過 UVR5 人聲分離"
+                # 路徑設定階段
+                echo ""
+                echo "📁 路徑設定確認"
+                echo "================="
+                
+                local input_dir="${DEFAULT_INPUT_DIR:-data/願望(音軌及字幕檔)}"
+                local uvr5_output_dir="${UVR5_OUTPUT_DIR:-data/uvr5_separated}"
+                local pyannote_output_dir="${DEFAULT_PROCESSED_DIR:-data/output}"
+                local split_dir="${DEFAULT_SPLIT_DIR:-data/split_dataset}"
+                
+                echo "📥 輸入目錄: $input_dir"
+                echo -n "修改輸入目錄 (回車使用預設): "
+                read custom_input_dir
+                if [ -n "$custom_input_dir" ]; then
+                    input_dir="$custom_input_dir"
                 fi
+                
+                echo "🎵 UVR5 輸出目錄: $uvr5_output_dir"
+                echo -n "修改 UVR5 輸出目錄 (回車使用預設): "
+                read custom_uvr5_dir
+                if [ -n "$custom_uvr5_dir" ]; then
+                    uvr5_output_dir="$custom_uvr5_dir"
+                fi
+                
+                echo "🤖 pyannote 輸出目錄: $pyannote_output_dir"
+                echo -n "修改 pyannote 輸出目錄 (回車使用預設): "
+                read custom_pyannote_dir
+                if [ -n "$custom_pyannote_dir" ]; then
+                    pyannote_output_dir="$custom_pyannote_dir"
+                fi
+                
+                echo "📊 切分資料集目錄: $split_dir"
+                echo -n "修改切分目錄 (回車使用預設): "
+                read custom_split_dir
+                if [ -n "$custom_split_dir" ]; then
+                    split_dir="$custom_split_dir"
+                fi
+                
+                local speakers_db_path="${SPEAKERS_DATABASE_PATH:-data/speakers.db}"
+                echo "🗄️ Speakers 資料庫: $speakers_db_path"
+                echo -n "修改 Speakers 資料庫路徑 (回車使用預設): "
+                read custom_db_path
+                if [ -n "$custom_db_path" ]; then
+                    speakers_db_path="$custom_db_path"
+                fi
+                
+                echo ""
+                echo "🔍 最終路徑設定："
+                echo "  📥 原始音檔: $input_dir"
+                echo "  🎵 UVR5 人聲分離輸出: $uvr5_output_dir"
+                echo "  🤖 pyannote 處理輸出: $pyannote_output_dir (使用 UVR5 輸出作為輸入)"
+                echo "  📊 最終切分資料集: $split_dir"
+                echo "  🗄️ Speakers 資料庫: $speakers_db_path"
+                echo ""
+                echo "💡 處理流程: 原始音檔 → UVR5 人聲分離 → pyannote 處理 → 切分資料集"
+                echo ""
+                echo -n "確認路徑設定？[Y/n]: "
+                read confirm_paths
+                
+                if [[ "$confirm_paths" =~ ^[Nn]$ ]]; then
+                    echo "❌ 已取消"
+                    pause_for_input
+                    return
+                fi
+                
+                echo "✅ 開始處理 ${#episodes[@]} 集..."
+                echo ""
+                
+                # 設定環境變數供後續使用
+                export CUSTOM_INPUT_DIR="$input_dir"
+                export CUSTOM_UVR5_OUTPUT_DIR="$uvr5_output_dir"
+                export CUSTOM_PYANNOTE_OUTPUT_DIR="$pyannote_output_dir"
+                export CUSTOM_SPLIT_DIR="$split_dir"
+                export CUSTOM_SPEAKERS_DATABASE_PATH="$speakers_db_path"
+                
+                # 暫時禁用 set -e 以避免批次處理中斷
+                set +e
+                smart_process_episodes_with_uvr5 "${episodes[@]}"
+                # 重新啟用 set -e
+                set -e
             else
                 echo "$episodes_output"
             fi
+            pause_for_input
+            ;;
+        2)
+            echo ""
+            echo "📁 按路徑 UVR5 智慧處理"
+            echo "支援格式："
+            echo "  • 目錄路徑: data/audio/"
+            echo "  • 單一檔案: input.wav"
+            echo "  • 萬用字元: backup_*.wav 或 **/*.mp3"
+            echo ""
+            echo "💡 完整流程：UVR5 人聲分離 → pyannote 處理 → 切分資料集"
+            echo ""
+            echo -n "請輸入路徑或模式: "
+            read input_path
+            
+            if [ -z "$input_path" ]; then
+                echo "❌ 請提供有效路徑"
+                pause_for_input
+                return
+            fi
+            
+            echo ""
+            echo "🚀 開始完整 UVR5 智慧處理流程..."
+            echo "輸入: $input_path"
+            
+            # 檢查 UVR5 環境
+            if ! check_uvr5_environment >/dev/null 2>&1; then
+                echo "❌ UVR5 環境未準備就緒，請先檢查設定"
+                pause_for_input
+                return
+            fi
+            
+            # Step 1: UVR5 人聲分離
+            echo ""
+            echo "🎵 Step 1: UVR5 人聲分離..."
+            local threads="${UVR5_MAX_WORKERS:-2}"
+            local python_cmd=$(detect_python)
+            
+            if [ -z "$python_cmd" ]; then
+                echo "❌ 找不到 Python"
+                pause_for_input
+                return
+            fi
+            
+            if $python_cmd "uvr5_cli.py" "$input_path" --threads "$threads" --backup; then
+                echo "✅ UVR5 人聲分離完成"
+            else
+                echo "❌ UVR5 處理失敗，請檢查日誌"
+                pause_for_input
+                return
+            fi
+            
+            # Step 2: 詢問是否需要 pyannote 處理和切分
+            echo ""
+            echo "🤖 Step 2: pyannote 處理 + 切分資料集"
+            echo -n "是否繼續進行 pyannote 處理和切分資料集? [Y/n]: "
+            read continue_processing
+            
+            if [[ "$continue_processing" =~ ^[Nn]$ ]]; then
+                echo "✅ 僅完成 UVR5 人聲分離"
+                echo "💡 提示：處理後的檔案已覆蓋原檔案，備份檔案為 .bak"
+                pause_for_input
+                return
+            fi
+            
+            echo ""
+            echo "⚠️  注意：按路徑處理目前不支援自動 pyannote 處理"
+            echo "💡 建議：如需完整智慧處理，請："
+            echo "   1. 將處理後的音檔放到集數目錄結構中"
+            echo "   2. 使用選項 1 (按集數處理) 進行完整處理"
+            echo "   3. 或使用選單選項 4 手動切分已處理的資料"
+            echo ""
+            echo "📁 UVR5 處理完成的檔案位置：$input_path (已覆蓋原檔案)"
+            echo "🔄 備份檔案：原檔案名.bak"
+            
             pause_for_input
             ;;
         3)
-            echo ""
-            echo -n "請輸入集數: "
-            read episode_num
-            if [[ "$episode_num" =~ ^[0-9]+$ ]]; then
-                smart_process_episode "$episode_num"
-            else
-                echo "❌ 無效集數"
-            fi
-            pause_for_input
-            ;;
-        4)
-            echo ""
-            echo "請輸入集數範圍（例如：1 2 3 或 1-5）："
-            echo -n "集數: "
-            read episodes_input
-            
-            # Parse episodes input
-            episodes_output=$(validate_episode_input "$episodes_input")
-            if [ $? -eq 0 ]; then
-                readarray -t episodes <<< "$episodes_output"
-                smart_process_episodes "${episodes[@]}"
-            else
-                echo "$episodes_output"
-            fi
-            pause_for_input
-            ;;
-        5)
             return
             ;;
         *)
@@ -157,7 +243,7 @@ smart_process_menu() {
 # Function to show main menu
 show_menu() {
     clear
-    echo "📊 Breeze ASR - ETL Pipeline (含 UVR5 人聲分離)"
+    echo "📊  TTS - ETL Pipeline (含 UVR5 人聲分離)"
     echo "============================================"
     echo ""
     echo "請選擇功能："

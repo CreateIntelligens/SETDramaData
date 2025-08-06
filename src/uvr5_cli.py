@@ -11,13 +11,14 @@ UVR5 專用命令行工具
   python uvr5_cli.py input.wav --backup           # 備份原檔
   python uvr5_cli.py data/ --threads 2            # 多執行緒
 
-Author: Breeze ASR ETL Pipeline
+Author:  TTS ETL Pipeline
 Version: 1.0
 """
 
 import argparse
 import sys
 import time
+import os
 from pathlib import Path
 from typing import List
 import glob
@@ -107,7 +108,19 @@ def main():
     parser.add_argument(
         '--backup', '-b',
         action='store_true',
-        help='備份原始檔案為 .bak'
+        default=True,  # 預設自動備份
+        help='備份原始檔案為 .bak (預設: True)'
+    )
+    
+    parser.add_argument(
+        '--no-backup',
+        action='store_true',
+        help='不備份原始檔案'
+    )
+    
+    parser.add_argument(
+        '--output-dir', '-o',
+        help='輸出目錄（如未指定則輸出到原檔案位置）'
     )
     
     parser.add_argument(
@@ -155,6 +168,10 @@ def main():
     )
     
     args = parser.parse_args()
+    
+    # 處理備份選項邏輯
+    if args.no_backup:
+        args.backup = False
     
     print("🎯 UVR5 專用處理工具")
     print("=" * 50)
@@ -234,8 +251,16 @@ def main():
         # 處理檔案
         if len(audio_files) == 1:
             # 單檔處理
+            output_path = None
+            if args.output_dir:
+                # 確保輸出目錄存在
+                os.makedirs(args.output_dir, exist_ok=True)
+                output_filename = audio_files[0].name
+                output_path = os.path.join(args.output_dir, output_filename)
+            
             result = processor.enhance_audio(
                 str(audio_files[0]),
+                output_path=output_path,
                 backup_original=args.backup
             )
             

@@ -65,7 +65,8 @@ reset_processing_state() {
         has_json=true
     fi
     
-    if [ -f "data/speakers.db" ]; then
+    local db_path="${SPEAKERS_DATABASE_PATH:-data/speakers.db}"
+    if [ -f "$db_path" ]; then
         has_db=true
     fi
     
@@ -82,7 +83,7 @@ reset_processing_state() {
         echo "🗄️ SQLite資料庫狀態:"
         local python_cmd=$(detect_python)
         if [ -n "$python_cmd" ]; then
-            $python_cmd "src/speaker_db_manager.py" stats
+            $python_cmd "src/speaker_db_manager.py" --database "$db_path" stats
         fi
         echo ""
     fi
@@ -116,7 +117,7 @@ EOF
     echo ""
     echo "⚠️  這將重置所有處理狀態記錄，包括："
     if [ "$has_db" = true ]; then
-        echo "  🗄️ SQLite資料庫 (speakers.db)"
+        echo "  🗄️ SQLite資料庫 ($db_path)"
     fi
     if [ "$has_json" = true ]; then
         echo "  📄 舊版JSON狀態 (processing_state.json)"
@@ -132,7 +133,7 @@ EOF
         
         # Remove SQLite database
         if [ "$has_db" = true ]; then
-            if rm -f "data/speakers.db"; then
+            if rm -f "$db_path"; then
                 echo "✅ SQLite資料庫已重置"
             else
                 echo "❌ SQLite資料庫重置失敗"
@@ -232,9 +233,10 @@ clean_specific_episodes() {
     
     # Check SQLite database first
     local python_cmd=$(detect_python)
-    if [ -f "data/speakers.db" ] && [ -n "$python_cmd" ]; then
+    local db_path="${SPEAKERS_DATABASE_PATH:-data/speakers.db}"
+    if [ -f "$db_path" ] && [ -n "$python_cmd" ]; then
         echo "🗄️ SQLite資料庫:"
-        $python_cmd "src/database_cleanup.py" show
+        $python_cmd "src/database_cleanup.py" --database "$db_path" show
         echo ""
     fi
     
@@ -439,9 +441,10 @@ EOF
             
             if [ ${#successfully_deleted[@]} -gt 0 ]; then
                 # Update SQLite database
-                if [ -f "data/speakers.db" ] && [ -n "$python_cmd" ]; then
+                local db_path="${SPEAKERS_DATABASE_PATH:-data/speakers.db}"
+                if [ -f "$db_path" ] && [ -n "$python_cmd" ]; then
                     echo "🗄️ 更新SQLite資料庫狀態..."
-                    $python_cmd "src/database_cleanup.py" remove "${successfully_deleted[@]}"
+                    $python_cmd "src/database_cleanup.py" --database "$db_path" remove "${successfully_deleted[@]}"
                 fi
                 
                 # Update legacy JSON if exists
@@ -520,8 +523,9 @@ clean_all_data() {
     echo "⚠️  這將刪除所有處理過的資料，包括："
     echo "  📁 輸出檔案 ($PROCESSED_DIR)"
     echo "  📁 切分資料集 ($SPLIT_DIR)"
-    if [ -f "data/speakers.db" ]; then
-        echo "  🗄️ SQLite資料庫 (data/speakers.db)"
+    local db_path="${SPEAKERS_DATABASE_PATH:-data/speakers.db}"
+    if [ -f "$db_path" ]; then
+        echo "  🗄️ SQLite資料庫 ($db_path)"
     fi
     if [ -f "processing_state.json" ]; then
         echo "  📄 舊版JSON狀態 (processing_state.json)"
@@ -558,8 +562,8 @@ clean_all_data() {
             fi
             
             # Remove SQLite database
-            if [ -f "data/speakers.db" ]; then
-                if rm -f data/speakers.db; then
+            if [ -f "$db_path" ]; then
+                if rm -f "$db_path"; then
                     echo "✅ 已清除SQLite資料庫"
                 else
                     echo "❌ 清除SQLite資料庫失敗"

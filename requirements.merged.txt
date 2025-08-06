@@ -1,4 +1,4 @@
-# Merged requirements for CosyVoice + Breeze ASR
+# Merged requirements for CosyVoice +  TTS
 # PyTorch with CUDA support
 torch==2.3.1
 torchaudio==2.3.1
@@ -45,7 +45,7 @@ tensorrt-cu12==10.0.1; sys_platform == 'linux'
 tensorrt-cu12-bindings==10.0.1; sys_platform == 'linux'
 tensorrt-cu12-libs==10.0.1; sys_platform == 'linux'
 
-# Breeze ASR (pyannote) dependencies
+#  TTS (pyannote) dependencies
 pyannote.audio>=3.1.0
 speechbrain>=0.5.0
 asteroid-filterbanks>=0.4.0

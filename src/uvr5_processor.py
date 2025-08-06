@@ -9,7 +9,7 @@ UVR5 音頻增強處理器
 - 切分資料集增強
 - 記憶體友善設計
 
-Author: Breeze ASR ETL Pipeline
+Author:  TTS ETL Pipeline
 Version: 1.0
 """
 
@@ -218,23 +218,8 @@ class UVR5Processor:
             # 載入音頻
             waveform, sample_rate = torchaudio.load(input_path)
             
-            # 檢查是否需要格式標準化
+            # 檢查是否需要格式標準化（只保留必要的處理）
             needs_format_fix = False
-            target_sample_rate = 44100  # UVR5 偏好的採樣率
-            
-            # 轉換為單聲道（如果是立體聲）
-            if waveform.shape[0] > 1:
-                waveform = torch.mean(waveform, dim=0, keepdim=True)
-                needs_format_fix = True
-                self.logger.info(f"🔄 轉換立體聲為單聲道")
-            
-            # 重採樣到目標採樣率
-            if sample_rate != target_sample_rate:
-                resampler = torchaudio.transforms.Resample(sample_rate, target_sample_rate)
-                waveform = resampler(waveform)
-                sample_rate = target_sample_rate
-                needs_format_fix = True
-                self.logger.info(f"🔄 重採樣: {sample_rate}Hz → {target_sample_rate}Hz")
             
             # 檢查是否需要補零
             needs_padding = duration < self.min_duration
@@ -259,19 +244,23 @@ class UVR5Processor:
                                                         (padding_before, padding_after), 
                                                         'constant', 0)
             
-            # 如果需要任何預處理，創建臨時檔案
-            if needs_format_fix or needs_padding:
+            # 如果需要補零預處理，創建臨時檔案
+            if needs_padding:
+                import os
+                import threading
+                
                 input_path_obj = Path(input_path)
-                temp_filename = f"processed_{int(time.time())}_{input_path_obj.name}"
+                process_id = os.getpid()
+                thread_id = threading.get_ident()
+                timestamp = int(time.time() * 1000000)  # 微秒級精度
+                
+                temp_filename = f"processed_p{process_id}_t{thread_id}_{timestamp}_{input_path_obj.name}"
                 temp_path = self.temp_dir / temp_filename
                 
                 # 保存預處理後的音頻
                 torchaudio.save(str(temp_path), waveform, sample_rate)
                 
-                if needs_padding:
-                    self.logger.info(f"✅ 音頻補零完成: {duration:.2f}s → {self.target_duration:.2f}s")
-                else:
-                    self.logger.info(f"✅ 音頻格式標準化完成")
+                self.logger.info(f"✅ 音頻補零完成: {duration:.2f}s → {self.target_duration:.2f}s")
                 
                 return str(temp_path)
             else:
@@ -329,15 +318,33 @@ class UVR5Processor:
             # --- 🚀 優先檢查是否已處理過（真正快速跳過） ---
             if backup_original and output_path == input_path:
                 backup_path = input_path.with_suffix('.bak')
+                completed_backup_path = input_path.with_suffix('.bak.completed')
                 
-                # 檢查是否已存在備份檔案 - 如果存在表示已處理過，立即跳過
-                if backup_path.exists():
+                # 檢查處理狀態
+                if completed_backup_path.exists():
+                    # 已完成處理，跳過
                     result['success'] = True
                     result['enhanced'] = False
                     result['already_processed'] = True
-                    result['backup_file'] = str(backup_path)
+                    result['backup_file'] = str(completed_backup_path)
                     result['processing_time'] = time.time() - start_time
+                    self.logger.debug(f"⏭️ 檔案已處理完成: {input_path.name}")
                     return result
+                elif backup_path.exists():
+                    # 有備份但未完成標記 = 之前處理中斷，需要恢復
+                    self.logger.warning(f"⚠️ 發現中斷的處理，從備份恢復: {input_path.name}")
+                    
+                    # 刪除可能損壞的原檔案
+                    if input_path.exists():
+                        input_path.unlink()
+                    
+                    # 從備份恢復原檔案
+                    backup_path.rename(input_path)
+                    
+                    self.logger.info(f"✅ 已從備份恢復，重新開始處理")
+                    
+                    # 重置備份路徑，後續會重新備份
+                    backup_path = input_path.with_suffix('.bak')
             
             # --- 只有未處理的檔案才進行音檔分析 ---
             original_duration = self.get_audio_duration(str(input_path))
@@ -364,57 +371,60 @@ class UVR5Processor:
                     actual_input_path = backup_path
 
             # 使用專用暫存目錄，避免在根目錄產生散落檔案
-            # 使用高精度時間戳 + 隨機數避免多執行緒衝突
+            # 使用進程ID + 執行緒ID + 時間戳 + 隨機數避免高並發衝突
             import random
+            import os
+            import threading
+            
+            process_id = os.getpid()
+            thread_id = threading.get_ident()
             timestamp = int(time.time() * 1000000)  # 微秒級精度
             random_id = random.randint(1000, 9999)
-            temp_output_dir = self.temp_dir / f"uvr5_processing_{timestamp}_{random_id}"
+            
+            temp_output_dir = self.temp_dir / f"uvr5_p{process_id}_t{thread_id}_{timestamp}_{random_id}"
             temp_output_dir.mkdir(parents=True, exist_ok=True)
             
             self.separator.output_dir = str(temp_output_dir)
             output_files = self.separator.separate(str(actual_input_path))
             
-            # 除錯：記錄返回的檔案列表
-            self.logger.info(f"🔍 分離器回傳檔案列表: {output_files}")
-            for f in output_files:
-                # 確保檔案名稱不是 None
-                if f is None:
-                    self.logger.warning("⚠️  檔案列表中包含 None 值，跳過")
-                    continue
-                    
-                try:
-                    # 檢查兩個可能的位置
-                    file_path1 = temp_output_dir / str(f)
-                    file_path2 = self.temp_dir / str(f)
-                    self.logger.info(f"  📁 檔案: {f}")
-                    self.logger.info(f"    位置1 {temp_output_dir}: {file_path1.exists()}")
-                    self.logger.info(f"    位置2 {self.temp_dir}: {file_path2.exists()}")
-                except Exception as e:
-                    self.logger.warning(f"⚠️  檢查檔案路徑時出錯 {f}: {e}")
-                    continue
-            
+            # 尋找 Vocals 檔案
             vocals_file = next((f for f in output_files if f is not None and str(f) and ('vocals' in str(f).lower() or '(vocals)' in str(f).lower())), None)
-            self.logger.info(f"🎤 找到的 Vocals 檔案: {vocals_file}")
             
             if vocals_file:
-                # 檢查兩個可能的位置
-                vocals_path1 = temp_output_dir / str(vocals_file)
-                vocals_path2 = self.temp_dir / str(vocals_file)
+                # 檢查多個可能的位置
+                possible_locations = [
+                    temp_output_dir / str(vocals_file),                    # 指定的暫存目錄
+                    self.temp_dir / str(vocals_file),                     # 主暫存目錄
+                    Path.cwd() / str(vocals_file),                        # 工作目錄
+                    Path(str(vocals_file))                                # 絕對路徑
+                ]
                 
-                if vocals_path1.exists():
-                    vocals_path = vocals_path1
-                    self.logger.info(f"🎤 使用位置1: {vocals_path}")
-                elif vocals_path2.exists():
-                    vocals_path = vocals_path2
-                    self.logger.info(f"🎤 使用位置2: {vocals_path}")
-                else:
-                    vocals_path = None
-                    self.logger.error(f"❌ Vocals 檔案在兩個位置都不存在")
+                vocals_path = None
+                for location in possible_locations:
+                    if location.exists():
+                        vocals_path = location
+                        break
+                
+                if vocals_path is None:
+                    # 如果還是找不到，嘗試搜尋整個暫存目錄
+                    vocals_filename = Path(vocals_file).name
+                    
+                    # 搜尋所有可能的位置
+                    for search_dir in [temp_output_dir, self.temp_dir, Path.cwd()]:
+                        for found_file in search_dir.rglob(vocals_filename):
+                            if found_file.exists():
+                                vocals_path = found_file
+                                break
+                        if vocals_path:
+                            break
+                
+                if vocals_path is None:
+                    self.logger.error(f"❌ 完全找不到 Vocals 檔案: {vocals_file}")
                 
                 if vocals_path:
                     # 如果進行了預處理（補零），需要還原到原始長度
                     if preprocessed_file and original_duration > 0:
-                        self.logger.info(f"🔧 還原音頻長度: 15.00s → {original_duration:.2f}s")
+                        self.logger.debug(f"🔧 還原音頻長度: 15.00s → {original_duration:.2f}s")
                         
                         # 載入處理後的人聲檔案
                         processed_waveform, processed_sample_rate = torchaudio.load(str(vocals_path))
@@ -458,6 +468,17 @@ class UVR5Processor:
                 raise RuntimeError("人聲檔案生成失敗")
 
             result['success'] = True
+            
+            # 處理成功後，創建完成標記
+            if backup_original and output_path == input_path and 'backup_file' in result:
+                backup_path = Path(result['backup_file'])
+                completed_backup_path = input_path.with_suffix('.bak.completed')
+                
+                # 將 .bak 重命名為 .bak.completed 表示處理完成
+                if backup_path.exists():
+                    backup_path.rename(completed_backup_path)
+                    result['backup_file'] = str(completed_backup_path)
+                    self.logger.debug(f"✅ 標記處理完成: {completed_backup_path.name}")
 
         except Exception as e:
             # --- 錯誤處理 ---

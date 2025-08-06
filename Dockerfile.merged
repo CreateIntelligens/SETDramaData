@@ -59,7 +59,7 @@ RUN conda activate ${VENV} && conda install -y -c conda-forge pynini==2.1.5
 
 # Copy all requirements
 COPY cosyvoice_docker/requirements.txt /tmp/cosyvoice_requirements.txt
-COPY requirements.txt /tmp/breeze_requirements.txt
+COPY requirements.txt /tmp/audio_etl_requirements.txt
 
 # Install following the same pattern as successful etl container
 RUN conda activate ${VENV} && \
@@ -69,11 +69,11 @@ RUN conda activate ${VENV} && \
     torchaudio>=2.0.0 \
     --index-url https://download.pytorch.org/whl/cu124 && \
     pip install --no-cache-dir -r /tmp/cosyvoice_requirements.txt && \
-    pip install --no-cache-dir -r /tmp/breeze_requirements.txt && \
+    pip install --no-cache-dir -r /tmp/audio_etl_requirements.txt && \
     pip install --no-cache-dir onnx-weekly onnxruntime-gpu && \
     pip install --no-cache-dir "numpy<2.0" && \
     pip install --no-cache-dir --no-deps audio-separator==0.20.0 && \
-    rm /tmp/cosyvoice_requirements.txt /tmp/breeze_requirements.txt
+    rm /tmp/cosyvoice_requirements.txt /tmp/audio_etl_requirements.txt
 
 # 離線環境不需要預下載模型，模型將透過掛載提供
 
